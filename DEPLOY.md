@@ -29,15 +29,27 @@ VM-2 (VDS Premium 4c/8GB)    VM-3 (Dedicated E-2388G 128GB/4TB)
 
 **Сеть:** VM-1 ↔ VM-2 по VLAN. К VM-3 (dedicated) через публичную сеть с ufw whitelist IP + PostgreSQL SSL.
 
+## Репозитории (multi-repo)
+
+| Репо | Что внутри | Branch | CI |
+|------|-----------|--------|----|
+| `nikander777/mz.main` | Laravel main + Dockerfile + Dockerfile.web | master | `.github/workflows/docker.yml` |
+| `nikander777/mz.discogs` | Laravel discogs + Dockerfile + Dockerfile.web | main | `.github/workflows/docker.yml` |
+| `nikander777/mz.nuxt` | Nuxt 3 SSR + Dockerfile | master | `.github/workflows/docker.yml` |
+| `nikander777/mz` (ops, новый) | compose.*.yml, Makefile, scripts/, DEPLOY.md, deploy.yml | main | `.github/workflows/deploy.yml` |
+
+Локально на маке `~/Sites/mz/` — это рабочая копия ops-репо, а `main/`, `discogs/`, `nuxt/`
+(в .gitignore) — рабочие копии сервисных репо.
+
 ## Образы (GHCR)
 
-Пушатся автоматически GitHub Actions (`.github/workflows/build.yml`) на каждый push в `main`:
+Пушатся автоматически каждым сервисом на push в свой main/master:
 
-- `ghcr.io/nikander777/mz-main:latest` + `mz-main-web:latest`
-- `ghcr.io/nikander777/mz-discogs:latest` + `mz-discogs-web:latest`
-- `ghcr.io/nikander777/mz-nuxt:latest`
+- `ghcr.io/nikander777/mz-main:latest` + `mz-main-web:latest` ← из mz.main
+- `ghcr.io/nikander777/mz-discogs:latest` + `mz-discogs-web:latest` ← из mz.discogs
+- `ghcr.io/nikander777/mz-nuxt:latest` ← из mz.nuxt
 
-Теги: `latest` + `sha-<commit>` для пиннинга версий.
+Теги: `latest` + `sha-<commit>` + `branch-<name>` для пиннинга.
 
 ## Особенности билда (важно!)
 
@@ -48,91 +60,115 @@ Nuxt SSR запекает в bundle при сборке:
 - API-токены и Reverb-параметры
 - Yandex Maps API key (`vue-yandex-maps` фиксирует apikey в bundle)
 
-Эти значения передаются через `build.args` в `compose.stage.yml`/`compose.vm1-edge.yml` и
-ARG-директивы в `docker/nuxt/Dockerfile`. **Один Nuxt-образ ≠ одно окружение** — для stage и prod
-требуется отдельная сборка с правильными значениями. CI пушит образ собранный с
-`http://main-web` / `http://discogs-web` (имена контейнеров) — это работает на VM-1, где
-все сервисы в одном compose. Если БД/Reverb у вас на удалённом домене, пересоберите Nuxt:
+Эти значения передаются:
+- **Локально (stage)**: через `build.args` в `compose.stage.yml` (читается из `.env`)
+- **CI (prod)**: через `build-args:` в `mz.nuxt/.github/workflows/docker.yml` — vars/secrets настраиваются в **mz.nuxt → Settings → Secrets and variables → Actions**:
+  - Variables: `LARAVEL_URL`, `BACKEND_BASE_URL`, `DISCOGS_BASE_URL`, `REVERB_HOST`, `REVERB_PORT`, `REVERB_SCHEME`
+  - Secrets: `DISCOGS_API_TOKEN`, `REVERB_APP_KEY`, `NUXT_PUBLIC_YMAPS_API_KEY`
+
+Дефолты в `nuxt/Dockerfile` рассчитаны на single-host setup (`http://main-web`/`http://discogs-web`).
+Для prod на отдельном домене — задай vars/secrets перед первым push в mz.nuxt.
+
+Если меняешь `.env` локально — пересоберись:
 
 ```bash
-docker compose -f compose.stage.yml build --pull=false nuxt   # после правки .env
+docker compose -f compose.stage.yml build --pull=false nuxt
 ```
 
 ### Laravel — `--no-dev` в prod-образах
 
-`docker/php/Dockerfile` собирает vendor с `--no-dev` — пакеты из `require-dev` (включая
-`fakerphp/faker`) **отсутствуют в образе**. Если запустить `php artisan db:seed`, факторы
-упадут с `Class "Faker\Factory" not found`. Для seed нужно временно поставить Faker
-в живой контейнер: `composer require --dev fakerphp/faker`. См. `make seed-demo`.
+`mz.main/Dockerfile` и `mz.discogs/Dockerfile` собирают vendor с `--no-dev` — пакеты из
+`require-dev` (включая `fakerphp/faker`) **отсутствуют в образе**. Если запустить
+`php artisan db:seed`, факторы упадут с `Class "Faker\Factory" not found`. Для seed
+нужно временно поставить Faker в живой контейнер:
+`composer require --dev fakerphp/faker`. См. `make seed-demo`.
 
 ## CI/CD
 
-Полный цикл: push в `main` → сборка образов → деплой на серверы.
+Поток: `git push` в сервисный репо → `docker.yml` собирает образ + пушит в GHCR →
+`repository_dispatch` event → `mz/.github/workflows/deploy.yml` → SSH на VM-1.
 
-- `.github/workflows/build.yml` — собирает 5 Docker-образов, пушит в GHCR
-- `.github/workflows/deploy.yml` — SSH на серверы (VM-3 → VM-2 → VM-1), pull + restart
+### Первичная настройка GitHub (один раз)
 
-### Первичная настройка GitHub Actions
+**1. Создать ops-репо `nikander777/mz` и запушить**:
 
-Делается **один раз**, перед первым `push origin main`.
-
-**1. Создать репозиторий на GitHub** (если ещё не):
+Локально ops уже инициализирован (`git init` + 2 коммита сделаны). Осталось:
 
 ```bash
-# С локальной машины:
 cd /Users/nikander/Sites/mz
-git init
-git add .
-git commit -m "initial commit"
-git branch -M main
-# Создай репо на github.com/new — name: mz (или другое имя owner/repo)
+# Создай пустой репо на github.com/new — name: mz (private или public)
 git remote add origin git@github.com:nikander777/mz.git
 git push -u origin main
 ```
 
-После пуша GHA подхватит `.github/workflows/build.yml` и сразу попробует собрать
-5 образов. Если упадёт — у тебя нет permissions на пуш в GHCR (см. п. 3).
+**2. Запушить локальные коммиты в сервисные репо**:
 
-**2. SSH-ключ для деплоя**: на локальной машине:
+В каждом сервисе сделаны коммиты с фиксами и docker.yml-патчами:
+
+```bash
+cd /Users/nikander/Sites/mz/main && git push origin master
+cd /Users/nikander/Sites/mz/discogs && git push origin main
+# ОСТОРОЖНО: в mz.nuxt есть твои несохранённые правки в app.vue/components.
+# Закоммить или закрой их сначала, потом:
+cd /Users/nikander/Sites/mz/nuxt && git push origin master
+```
+
+**3. SSH-ключ для деплоя** на локальной машине:
 
 ```bash
 ssh-keygen -t ed25519 -f ~/.ssh/muzilla_deploy -C "muzilla-ci-deploy" -N ""
-# Залей публичный ключ на каждый из VM-1/VM-2/VM-3:
+# Публичный ключ — на каждую VM:
 for host in <VM1_IP> <VM2_IP> <VM3_IP>; do
     ssh-copy-id -i ~/.ssh/muzilla_deploy.pub root@$host
 done
 ```
 
-**3. GitHub Secrets** (Settings → Secrets and variables → Actions → New repository secret):
+**4. PAT для repository_dispatch (`OPS_DEPLOY_TOKEN`)**:
 
-| Secret | Значение | Откуда |
-|--------|----------|--------|
-| `SSH_PRIVATE_KEY` | содержимое `~/.ssh/muzilla_deploy` | `cat ~/.ssh/muzilla_deploy` |
-| `SSH_USER` | `root` | (или другой пользователь, если ты создал отдельного) |
-| `SSH_PORT` | `22` | (или нестандартный, если меняли в provision) |
-| `VM1_HOST` | публичный IP VM-1 | хостер |
-| `VM2_HOST` | публичный IP VM-2 | хостер |
-| `VM3_HOST` | публичный IP VM-3 (временный или dedicated) | хостер |
+Создай Personal Access Token: https://github.com/settings/tokens/new?scopes=repo
+Название «mz-deploy-trigger», scope `repo`. Сохрани — нужен в каждом сервисном репо.
 
-**4. GHCR публичность пакетов**: после первой сборки `build.yml` создаст пакеты в GHCR
-как **private**. Чтобы VM-ки могли тянуть образы без `docker login`, сделай их public:
-GitHub → твой профиль → Packages → каждый пакет (`mz-main`, `mz-main-web`, `mz-discogs`,
+**5. Secrets и variables по репо** (Settings → Secrets and variables → Actions):
+
+В **`mz.main`, `mz.discogs`, `mz.nuxt`** — Secret:
+
+- `OPS_DEPLOY_TOKEN` — PAT из п. 4
+
+В **`mz.nuxt`** дополнительно (для build-args, см. раздел "Особенности билда"):
+
+- Variables: `LARAVEL_URL`, `BACKEND_BASE_URL`, `DISCOGS_BASE_URL`, `REVERB_HOST`, `REVERB_PORT`, `REVERB_SCHEME`
+- Secrets: `DISCOGS_API_TOKEN`, `REVERB_APP_KEY`, `NUXT_PUBLIC_YMAPS_API_KEY`
+
+В **ops-репо `nikander777/mz`**:
+
+- `SSH_PRIVATE_KEY` — содержимое `~/.ssh/muzilla_deploy` (`cat`)
+- `SSH_USER` — `root`
+- `SSH_PORT` — `22`
+- `VM1_HOST` — публичный IP VM-1
+- `VM2_HOST` — публичный IP VM-2
+- `VM3_HOST` — публичный IP VM-3 (временный или dedicated)
+
+**6. GHCR публичность**: после первой сборки появится package в GHCR как **private**.
+Чтобы VM-ки тянули без `docker login`, сделай каждый public:
+GitHub → твой профиль → Packages → каждый (`mz-main`, `mz-main-web`, `mz-discogs`,
 `mz-discogs-web`, `mz-nuxt`) → Package settings → Change visibility → Public.
 
-Альтернатива — оставить private и на каждом VM выполнить `docker login ghcr.io` с PAT
-(scope `read:packages`); `setup_ghcr_login` в provision-скриптах это и делает.
+Альтернатива — оставить private и на каждой VM выполнить `docker login ghcr.io` с PAT
+(scope `read:packages`); `setup_ghcr_login` в provision-скриптах это делает.
 
-**5. Тестовый push**: после настройки secrets:
+**7. Тест полного цикла**:
 
 ```bash
-# Лёгкое изменение (например в README) и push
-git commit --allow-empty -m "trigger: ci/cd test"
-git push origin main
+# В любом из сервисов — пустой коммит для триггера:
+cd /Users/nikander/Sites/mz/main
+git commit --allow-empty -m "ci: trigger test"
+git push origin master
 ```
 
-Открой Actions tab — `Build & Push` должен зеленеть на 5 jobs (~5–10 минут на образ
-благодаря cache-from gha). После — `Deploy` запустится автоматически (зависит от
-`workflow_run` от Build), пойдёт на VM-3 → VM-2 → VM-1.
+Открой `mz.main → Actions` — `Build & push Docker images` должен зеленеть на 2 jobs
+(app + web) ~5-10 минут. Сразу после — в `nikander777/mz → Actions` стартанёт `Deploy`
+от `repository_dispatch`. Пойдёт SSH на VM-1, сделает `git pull` ops-репо
+и `docker compose pull && up -d`.
 
 ---
 
