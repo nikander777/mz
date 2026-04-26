@@ -1,0 +1,89 @@
+# VM-2 «app»: Redis, Reverb (WSS), очереди, scheduler.
+# Ходит в VM-3 за БД и Meili.
+name: muzilla-app
+
+x-laravel-env: &laravel-env
+  APP_ENV: production
+  APP_DEBUG: "false"
+  LOG_CHANNEL: stderr
+  DB_CONNECTION: pgsql
+  DB_HOST: ${VM3_HOST}
+  DB_PORT: 5432
+  DB_USERNAME: ${POSTGRES_USER}
+  DB_PASSWORD: ${POSTGRES_PASSWORD}
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  CACHE_STORE: redis
+  SESSION_DRIVER: redis
+  QUEUE_CONNECTION: redis
+  BROADCAST_CONNECTION: reverb
+  SCOUT_DRIVER: meilisearch
+  MEILISEARCH_HOST: http://${VM3_HOST}:7700
+  MEILISEARCH_KEY: ${MEILI_MASTER_KEY}
+  REVERB_APP_ID: ${REVERB_APP_ID}
+  REVERB_APP_KEY: ${REVERB_APP_KEY}
+  REVERB_APP_SECRET: ${REVERB_APP_SECRET}
+  REVERB_HOST: reverb
+  REVERB_PORT: 8080
+  REVERB_SCHEME: http
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${VM2_PRIVATE_IP:-0.0.0.0}:6379:6379"   # слушает только приватный интерфейс
+    restart: unless-stopped
+
+  reverb:
+    image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${MAIN_APP_KEY}
+      APP_URL: ${MAIN_APP_URL}
+      DB_DATABASE: ${MAIN_DB_DATABASE}
+    ports:
+      - "${VM2_PRIVATE_IP:-0.0.0.0}:8080:8080"
+    depends_on: [redis]
+    restart: unless-stopped
+
+  main-queue:
+    image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
+    command: php artisan queue:work --tries=3 --timeout=120
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${MAIN_APP_KEY}
+      APP_URL: ${MAIN_APP_URL}
+      DB_DATABASE: ${MAIN_DB_DATABASE}
+    depends_on: [redis]
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+  main-scheduler:
+    image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
+    command: php artisan schedule:work
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${MAIN_APP_KEY}
+      APP_URL: ${MAIN_APP_URL}
+      DB_DATABASE: ${MAIN_DB_DATABASE}
+    depends_on: [redis]
+    restart: unless-stopped
+
+  discogs-queue:
+    image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
+    command: php artisan queue:work --tries=3 --timeout=120
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${DISCOGS_APP_KEY}
+      APP_URL: ${DISCOGS_APP_URL}
+      DB_DATABASE: ${DISCOGS_DB_DATABASE}
+    depends_on: [redis]
+    restart: unless-stopped
+
+volumes:
+  redis_data:

@@ -1,0 +1,117 @@
+name: Deploy
+
+# Триггеры:
+#   - repository_dispatch с event-type "deploy-vm1" — приходит от build.yml
+#     каждого из 3 сервисных репо после успешной сборки.
+#   - workflow_dispatch — ручной запуск с выбором target.
+on:
+  repository_dispatch:
+    types: [deploy-vm1, deploy-vm2, deploy-vm3, deploy-all]
+
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Куда деплоим'
+        required: true
+        default: 'vm1'
+        type: choice
+        options:
+          - all
+          - vm1
+          - vm2
+          - vm3
+
+# Запрет параллельных деплоев
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # ===== VM-3 (Data) — первой =====
+  deploy-vm3:
+    if: >
+      (github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.target == 'all' || github.event.inputs.target == 'vm3'))
+      ||
+      (github.event_name == 'repository_dispatch' &&
+        (github.event.action == 'deploy-vm3' || github.event.action == 'deploy-all'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VM-3 (Data)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM3_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd /opt/muzilla
+            git pull origin main
+            docker compose -f compose.vm3-data.yml pull
+            docker compose -f compose.vm3-data.yml up -d
+            sleep 10
+            docker compose -f compose.vm3-data.yml exec -T postgres pg_isready -U muzilla
+
+  # ===== VM-2 (App) — после VM-3 =====
+  deploy-vm2:
+    needs: [deploy-vm3]
+    if: >
+      always() &&
+      !failure() &&
+      ((github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.target == 'all' || github.event.inputs.target == 'vm2'))
+       ||
+       (github.event_name == 'repository_dispatch' &&
+        (github.event.action == 'deploy-vm2' || github.event.action == 'deploy-all')))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VM-2 (App)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM2_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd /opt/muzilla
+            git pull origin main
+            docker compose -f compose.vm2-app.yml pull
+            docker compose -f compose.vm2-app.yml up -d
+            sleep 5
+            docker compose -f compose.vm2-app.yml exec -T redis redis-cli ping
+
+  # ===== VM-1 (Edge) — последней =====
+  deploy-vm1:
+    needs: [deploy-vm2]
+    if: >
+      always() &&
+      !failure() &&
+      ((github.event_name == 'workflow_dispatch' &&
+        (github.event.inputs.target == 'all' || github.event.inputs.target == 'vm1'))
+       ||
+       github.event_name == 'repository_dispatch')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VM-1 (Edge)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM1_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd /opt/muzilla
+            git pull origin main
+            docker compose -f compose.vm1-edge.yml pull
+            docker compose -f compose.vm1-edge.yml up -d --remove-orphans
+            sleep 10
+            # Миграции — только при репозиторий-диспатч от main, не каждый push
+            if [ "${{ github.event.client_payload.service }}" = "main" ]; then
+              docker compose -f compose.vm1-edge.yml exec -T main php artisan migrate --force
+            fi
+            if [ "${{ github.event.client_payload.service }}" = "discogs" ]; then
+              docker compose -f compose.vm1-edge.yml exec -T discogs php artisan migrate --force
+            fi
+            # Edge nginx кэширует upstream IP — рестарт чтобы подхватить новые контейнеры
+            docker compose -f compose.vm1-edge.yml restart edge
+            curl -sf http://localhost:8080/health || exit 1

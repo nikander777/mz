@@ -1,0 +1,11 @@
+# Caddyfile для MUZILLA — VM-1 (Edge).
+# Caddy автоматически получает SSL-сертификат от Let's Encrypt.
+# Замени DOMAIN на свой домен (mzt.nadev.ru или new.muzilla.ru).
+
+{$DOMAIN:mzt.nadev.ru} {
+    reverse_proxy 127.0.0.1:8080 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

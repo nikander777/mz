@@ -1,0 +1,78 @@
+# VM-3 «data»: Postgres, Meilisearch, MinIO, бэкапы.
+# Порты открыты только на приватный интерфейс (VM2_PRIVATE_IP / VM3_PRIVATE_IP).
+name: muzilla-data
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${VM3_PRIVATE_IP:-0.0.0.0}:5432:5432"
+    shm_size: 1gb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      retries: 5
+    restart: unless-stopped
+    command: >
+      postgres
+      -c shared_buffers=32GB
+      -c effective_cache_size=96GB
+      -c max_connections=200
+      -c work_mem=64MB
+      -c maintenance_work_mem=2GB
+      -c ssl=on
+      -c ssl_cert_file=/var/lib/postgresql/data/server.crt
+      -c ssl_key_file=/var/lib/postgresql/data/server.key
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.6
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili_data:/meili_data
+    ports:
+      - "${VM3_PRIVATE_IP:-0.0.0.0}:7700:7700"
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "${VM3_PRIVATE_IP:-0.0.0.0}:9000:9000"
+      - "${VM3_PRIVATE_IP:-0.0.0.0}:9001:9001"
+    restart: unless-stopped
+
+  pgbackups:
+    image: prodrigestivill/postgres-backup-local:17
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB},${MAIN_DB_DATABASE},${DISCOGS_DB_DATABASE}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 14
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+    volumes:
+      - ./backups:/backups
+    depends_on: [postgres]
+    restart: unless-stopped
+
+volumes:
+  pg_data:
+  meili_data:
+  minio_data:

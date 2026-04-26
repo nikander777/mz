@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Message Link</title>
+</head>
+<body>
+    <h1>Тест отправки сообщения</h1>
+    <p>Нажмите на ссылку ниже чтобы отправить тестовое сообщение:</p>
+    <a href="javascript:void(0)" onclick="sendTestMessage()" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Отправить тестовое сообщение</a>
+
+    <div id="status" style="margin-top: 20px; padding: 10px; border: 1px solid #ddd; background: #f9f9f9;"></div>
+
+    <script>
+    async function sendTestMessage() {
+        const status = document.getElementById('status');
+        status.innerHTML = 'Отправляем сообщение...';
+
+        try {
+            // Получаем CSRF cookie
+            await fetch('https://main.nadev.ru/sanctum/csrf-cookie', {
+                credentials: 'include'
+            });
+
+            // Отправляем сообщение в диалог ID 1
+            const response = await fetch('https://main.nadev.ru/api/conversations/1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    content: 'Тестовое сообщение от ' + new Date().toLocaleTimeString(),
+                    type: 'text'
+                })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                status.innerHTML = `✅ Сообщение отправлено! ID: ${data.id}<br>Проверьте консоль в месенджере на наличие событий.`;
+            } else {
+                const error = await response.text();
+                status.innerHTML = `❌ Ошибка: ${response.status} - ${error}`;
+            }
+        } catch (error) {
+            status.innerHTML = `❌ Ошибка: ${error.message}`;
+        }
+    }
+    </script>
+</body>
+</html>

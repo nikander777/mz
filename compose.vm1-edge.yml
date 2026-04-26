@@ -1,0 +1,104 @@
+# VM-1 «edge»: reverse-proxy, Nuxt SSR, web-sidecar'ы Laravel.
+# Общается с VM-2 (queue/redis/reverb) и VM-3 (postgres/meili) по приватной сети.
+#
+# Требуемые env (см. .env.prod.example + .env.vm1):
+#   VM2_HOST, VM3_HOST — IP/hostname в приватной сети
+name: muzilla-edge
+
+x-laravel-env: &laravel-env
+  APP_ENV: production
+  APP_DEBUG: "false"
+  LOG_CHANNEL: stderr
+  DB_CONNECTION: pgsql
+  DB_HOST: ${VM3_HOST}
+  DB_PORT: 5432
+  DB_USERNAME: ${POSTGRES_USER}
+  DB_PASSWORD: ${POSTGRES_PASSWORD}
+  REDIS_HOST: ${VM2_HOST}
+  REDIS_PORT: 6379
+  CACHE_STORE: redis
+  SESSION_DRIVER: redis
+  QUEUE_CONNECTION: redis
+  BROADCAST_CONNECTION: reverb
+  SCOUT_DRIVER: meilisearch
+  MEILISEARCH_HOST: http://${VM3_HOST}:7700
+  MEILISEARCH_KEY: ${MEILI_MASTER_KEY}
+  REVERB_APP_ID: ${REVERB_APP_ID}
+  REVERB_APP_KEY: ${REVERB_APP_KEY}
+  REVERB_APP_SECRET: ${REVERB_APP_SECRET}
+  REVERB_HOST: ${VM2_HOST}
+  REVERB_PORT: 8080
+  REVERB_SCHEME: http
+  DISCOGS_API_TOKEN: ${DISCOGS_API_TOKEN}
+
+services:
+  main:
+    image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${MAIN_APP_KEY}
+      APP_URL: ${MAIN_APP_URL}
+      DB_DATABASE: ${MAIN_DB_DATABASE}
+      DISCOGS_DB_HOST: ${VM3_HOST}
+      DISCOGS_DB_DATABASE: ${MAIN_DISCOGS_DB_DATABASE}
+      DISCOGS_DB_USERNAME: ${POSTGRES_USER}
+      DISCOGS_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - main_storage:/var/www/html/storage
+    restart: unless-stopped
+
+  main-web:
+    image: ghcr.io/nikander777/mz-main-web:${MAIN_TAG:-latest}
+    environment:
+      FPM_HOST: main
+    depends_on: [main]
+    restart: unless-stopped
+
+  discogs:
+    image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${DISCOGS_APP_KEY}
+      APP_URL: ${DISCOGS_APP_URL}
+      DB_DATABASE: ${DISCOGS_DB_DATABASE}
+    volumes:
+      - discogs_storage:/var/www/html/storage
+    restart: unless-stopped
+
+  discogs-web:
+    image: ghcr.io/nikander777/mz-discogs-web:${DISCOGS_TAG:-latest}
+    environment:
+      FPM_HOST: discogs
+    depends_on: [discogs]
+    restart: unless-stopped
+
+  nuxt:
+    image: ghcr.io/nikander777/mz-nuxt:${NUXT_TAG:-latest}
+    environment:
+      NODE_ENV: production
+      LARAVEL_URL: http://main-web
+      BACKEND_BASE_URL: ${NUXT_BACKEND_BASE_URL}
+      DISCOGS_BASE_URL: http://discogs-web
+      DISCOGS_API_TOKEN: ${DISCOGS_API_TOKEN}
+      REVERB_APP_KEY: ${REVERB_APP_KEY}
+      REVERB_HOST: ${PUBLIC_HOST}
+      REVERB_PORT: 443
+      REVERB_SCHEME: https
+      NUXT_PUBLIC_YMAPS_API_KEY: ${NUXT_PUBLIC_YMAPS_API_KEY}
+    restart: unless-stopped
+
+  edge:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./docker/edge/nginx.conf:/etc/nginx/nginx.conf:ro
+    extra_hosts:
+      # reverb живёт на VM-2, nginx ходит туда по имени
+      - "reverb:${VM2_HOST}"
+    depends_on: [nuxt, main-web, discogs-web]
+    restart: unless-stopped
+
+volumes:
+  main_storage:
+  discogs_storage:
