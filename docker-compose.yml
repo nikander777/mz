@@ -1,0 +1,216 @@
+# Dev-стек MUZILLA: всё на одной машине.
+# Запуск:
+#   cp .env.docker.example .env
+#   docker compose up -d --build
+# Edge-proxy слушает http://localhost (порт 80).
+
+name: muzilla
+
+x-laravel-env: &laravel-env
+  APP_ENV: ${APP_ENV:-local}
+  APP_DEBUG: ${APP_DEBUG:-true}
+  LOG_CHANNEL: stderr
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_USERNAME: ${POSTGRES_USER}
+  DB_PASSWORD: ${POSTGRES_PASSWORD}
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  CACHE_STORE: redis
+  SESSION_DRIVER: redis
+  QUEUE_CONNECTION: redis
+  BROADCAST_CONNECTION: reverb
+  SCOUT_DRIVER: meilisearch
+  MEILISEARCH_HOST: http://meilisearch:7700
+  MEILISEARCH_KEY: ${MEILI_MASTER_KEY}
+  REVERB_APP_ID: ${REVERB_APP_ID}
+  REVERB_APP_KEY: ${REVERB_APP_KEY}
+  REVERB_APP_SECRET: ${REVERB_APP_SECRET}
+  REVERB_HOST: reverb
+  REVERB_PORT: 8080
+  REVERB_SCHEME: http
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "55432:5432"
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.6
+    environment:
+      MEILI_ENV: ${MEILI_ENV:-development}
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili_data:/meili_data
+    ports:
+      - "17700:7700"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:7700/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  main:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        APP_DIR: main
+    image: muzilla/main:dev
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${MAIN_APP_KEY}
+      APP_URL: ${MAIN_APP_URL}
+      DB_DATABASE: ${MAIN_DB_DATABASE}
+      DISCOGS_DB_CONNECTION: pgsql
+      DISCOGS_DB_HOST: postgres
+      DISCOGS_DB_PORT: 5432
+      DISCOGS_DB_DATABASE: ${MAIN_DISCOGS_DB_DATABASE}
+      DISCOGS_DB_USERNAME: ${POSTGRES_USER}
+      DISCOGS_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      RUN_MIGRATIONS: "true"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      meilisearch: { condition: service_healthy }
+
+  main-web:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+      args:
+        APP_DIR: main
+    image: muzilla/main-web:dev
+    environment:
+      FPM_HOST: main
+    depends_on:
+      - main
+
+  discogs:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        APP_DIR: discogs
+    image: muzilla/discogs:dev
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${DISCOGS_APP_KEY}
+      APP_URL: ${DISCOGS_APP_URL}
+      DB_DATABASE: ${DISCOGS_DB_DATABASE}
+      RUN_MIGRATIONS: "true"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  discogs-web:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+      args:
+        APP_DIR: discogs
+    image: muzilla/discogs-web:dev
+    environment:
+      FPM_HOST: discogs
+    depends_on:
+      - discogs
+
+  reverb:
+    image: muzilla/main:dev
+    command: php artisan reverb:start --host=0.0.0.0 --port=8080
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${MAIN_APP_KEY}
+      APP_URL: ${MAIN_APP_URL}
+      DB_DATABASE: ${MAIN_DB_DATABASE}
+    depends_on:
+      - main
+
+  main-queue:
+    image: muzilla/main:dev
+    command: php artisan queue:work --tries=3 --timeout=120
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${MAIN_APP_KEY}
+      APP_URL: ${MAIN_APP_URL}
+      DB_DATABASE: ${MAIN_DB_DATABASE}
+    depends_on:
+      - main
+    restart: unless-stopped
+
+  discogs-queue:
+    image: muzilla/discogs:dev
+    command: php artisan queue:work --tries=3 --timeout=120
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${DISCOGS_APP_KEY}
+      APP_URL: ${DISCOGS_APP_URL}
+      DB_DATABASE: ${DISCOGS_DB_DATABASE}
+    depends_on:
+      - discogs
+    restart: unless-stopped
+
+  nuxt:
+    build:
+      context: .
+      dockerfile: docker/nuxt/Dockerfile.dev
+    image: muzilla/nuxt:dev
+    environment:
+      NODE_ENV: development
+      LARAVEL_URL: ${NUXT_LARAVEL_URL}
+      BACKEND_BASE_URL: ${NUXT_BACKEND_BASE_URL}
+      DISCOGS_BASE_URL: ${NUXT_DISCOGS_BASE_URL}
+      DISCOGS_API_TOKEN: ${DISCOGS_API_TOKEN}
+      REVERB_APP_KEY: ${REVERB_APP_KEY}
+      REVERB_HOST: ${REVERB_HOST}
+      REVERB_PORT: ${REVERB_PORT}
+      REVERB_SCHEME: ${REVERB_SCHEME}
+      NUXT_PUBLIC_YMAPS_API_KEY: ${NUXT_PUBLIC_YMAPS_API_KEY}
+    depends_on:
+      - main-web
+      - discogs-web
+
+  edge:
+    image: nginx:1.27-alpine
+    ports:
+      - "8088:80"
+    volumes:
+      - ./docker/edge/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - nuxt
+      - main-web
+      - discogs-web
+      - reverb
+
+volumes:
+  pg_data:
+  redis_data:
+  meili_data:

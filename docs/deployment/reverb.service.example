@@ -1,0 +1,22 @@
+[Unit]
+Description=Laravel Reverb WebSocket Server
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/path/to/your/laravel/app
+ExecStart=/usr/bin/php artisan reverb:start --host=127.0.0.1 --port=8080
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+
+# Инструкции для установки:
+# 1. Скопируйте этот файл в /etc/systemd/system/reverb.service
+# 2. Измените путь к приложению и пользователя
+# 3. Выполните:
+#    sudo systemctl daemon-reload
+#    sudo systemctl enable reverb
+#    sudo systemctl start reverb
