@@ -6,7 +6,7 @@ name: Deploy
 #   - workflow_dispatch — ручной запуск с выбором target.
 on:
   repository_dispatch:
-    types: [deploy-vm1, deploy-vm2, deploy-vm3, deploy-all]
+    types: [deploy-prod-vm1, deploy-prod-vm2, deploy-prod-vm3, deploy-prod-all]
 
   workflow_dispatch:
     inputs:
@@ -34,7 +34,7 @@ jobs:
         (github.event.inputs.target == 'all' || github.event.inputs.target == 'vm3'))
       ||
       (github.event_name == 'repository_dispatch' &&
-        (github.event.action == 'deploy-vm3' || github.event.action == 'deploy-all'))
+        (github.event.action == 'deploy-prod-vm3' || github.event.action == 'deploy-prod-all'))
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to VM-3 (Data)
@@ -62,7 +62,7 @@ jobs:
         (github.event.inputs.target == 'all' || github.event.inputs.target == 'vm2'))
        ||
        (github.event_name == 'repository_dispatch' &&
-        (github.event.action == 'deploy-vm2' || github.event.action == 'deploy-all')))
+        (github.event.action == 'deploy-prod-vm2' || github.event.action == 'deploy-prod-all')))
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to VM-2 (App)

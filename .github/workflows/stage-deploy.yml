@@ -1,0 +1,54 @@
+name: Deploy stage (single VPS)
+
+# Триггеры:
+#   - repository_dispatch с event-type "deploy-vm1" — приходит от build.yml
+#     каждого из 3 сервисных репо после успешной сборки.
+#   - workflow_dispatch — ручной запуск.
+#
+# Этот workflow для ОДНОГО VPS со stage-стеком (compose.stage.yml).
+# Для prod 3-VM — см. prod-deploy.yml (триггерится event-type "deploy-prod-vm1" и т.д.).
+on:
+  repository_dispatch:
+    types: [deploy-vm1, deploy-stage]
+
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-stage
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to stage VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM1_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -e
+            cd /opt/muzilla
+            echo "=== Pulling ops repo ==="
+            git pull origin main
+            echo "=== Pulling images from GHCR (best-effort) ==="
+            docker compose -f compose.stage.yml pull --ignore-buildable || true
+            echo "=== Recreating containers ==="
+            docker compose -f compose.stage.yml up -d --remove-orphans
+            sleep 10
+            echo "=== Migrations (per-service) ==="
+            if [ "${{ github.event.client_payload.service }}" = "main" ] \
+               || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              docker compose -f compose.stage.yml exec -T main php artisan migrate --force || true
+            fi
+            if [ "${{ github.event.client_payload.service }}" = "discogs" ] \
+               || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              docker compose -f compose.stage.yml exec -T discogs php artisan migrate --force || true
+            fi
+            echo "=== Restart edge (sbros DNS upstream cache) ==="
+            docker compose -f compose.stage.yml restart edge
+            echo "=== Smoke ==="
+            curl -sf http://localhost:8080/health || (echo "Health check failed!" && exit 1)
+            echo "=== Deploy OK ==="
