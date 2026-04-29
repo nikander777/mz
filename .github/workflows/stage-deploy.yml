@@ -38,7 +38,7 @@ jobs:
           echo "=== Pulling ops repo ==="
           git pull origin main
           echo "=== Pulling images from GHCR (best-effort) ==="
-          docker compose -f compose.stage.yml pull --ignore-buildable || true
+          docker compose -f compose.stage.yml pull --ignore-pull-failures || true
           echo "=== Recreating containers ==="
           docker compose -f compose.stage.yml up -d --remove-orphans
           sleep 10
