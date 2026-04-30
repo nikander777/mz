@@ -1,13 +1,12 @@
-name: Deploy
+name: Deploy 3-VM prod
 
-# Триггеры:
-#   - repository_dispatch с event-type "deploy-vm1" — приходит от build.yml
-#     каждого из 3 сервисных репо после успешной сборки.
-#   - workflow_dispatch — ручной запуск с выбором target.
+# Только ручной запуск через UI (Actions → Run workflow). Никакого
+# auto-deploy на prod от push'а в сервисный репо. Сначала проверяем на
+# stage (https://mzt.nadev.ru), потом руками катим на prod.
+#
+# Использует отдельные secrets PROD_VM*_HOST + PROD_SSH_PRIVATE_KEY,
+# чтобы случайно не задеть stage-VPS.
 on:
-  repository_dispatch:
-    types: [deploy-prod-vm1, deploy-prod-vm2, deploy-prod-vm3, deploy-prod-all]
-
   workflow_dispatch:
     inputs:
       target:
@@ -20,98 +19,107 @@ on:
           - vm1
           - vm2
           - vm3
+      run_migrations:
+        description: 'Запустить migrate на VM-1 после деплоя'
+        required: false
+        default: false
+        type: boolean
 
-# Запрет параллельных деплоев
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+env:
+  SSH_KEY_PATH: ~/.ssh/prod_deploy_key
+
 jobs:
   # ===== VM-3 (Data) — первой =====
   deploy-vm3:
-    if: >
-      (github.event_name == 'workflow_dispatch' &&
-        (github.event.inputs.target == 'all' || github.event.inputs.target == 'vm3'))
-      ||
-      (github.event_name == 'repository_dispatch' &&
-        (github.event.action == 'deploy-prod-vm3' || github.event.action == 'deploy-prod-all'))
+    if: ${{ inputs.target == 'all' || inputs.target == 'vm3' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to VM-3 (Data)
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VM3_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            cd /opt/muzilla
-            git pull origin main
-            docker compose -f compose.vm3-data.yml pull
-            docker compose -f compose.vm3-data.yml up -d
-            sleep 10
-            docker compose -f compose.vm3-data.yml exec -T postgres pg_isready -U muzilla
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_SSH_PRIVATE_KEY }}" > ${{ env.SSH_KEY_PATH }}
+          chmod 600 ${{ env.SSH_KEY_PATH }}
+          ssh-keyscan -H -p ${{ secrets.PROD_SSH_PORT }} ${{ secrets.PROD_VM3_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Deploy VM-3
+        run: |
+          ssh -i ${{ env.SSH_KEY_PATH }} -p ${{ secrets.PROD_SSH_PORT }} \
+            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_VM3_HOST }} bash -s <<'REMOTE'
+          set -e
+          cd /opt/muzilla
+          git pull origin main
+          docker compose -f compose.vm3-data.yml pull --ignore-pull-failures || true
+          docker compose -f compose.vm3-data.yml up -d
+          sleep 10
+          docker compose -f compose.vm3-data.yml exec -T postgres pg_isready -U muzilla
+          echo "VM-3 OK"
+          REMOTE
 
   # ===== VM-2 (App) — после VM-3 =====
   deploy-vm2:
     needs: [deploy-vm3]
-    if: >
-      always() &&
-      !failure() &&
-      ((github.event_name == 'workflow_dispatch' &&
-        (github.event.inputs.target == 'all' || github.event.inputs.target == 'vm2'))
-       ||
-       (github.event_name == 'repository_dispatch' &&
-        (github.event.action == 'deploy-prod-vm2' || github.event.action == 'deploy-prod-all')))
+    if: ${{ always() && !failure() && (inputs.target == 'all' || inputs.target == 'vm2') }}
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to VM-2 (App)
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VM2_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            cd /opt/muzilla
-            git pull origin main
-            docker compose -f compose.vm2-app.yml pull
-            docker compose -f compose.vm2-app.yml up -d
-            sleep 5
-            docker compose -f compose.vm2-app.yml exec -T redis redis-cli ping
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_SSH_PRIVATE_KEY }}" > ${{ env.SSH_KEY_PATH }}
+          chmod 600 ${{ env.SSH_KEY_PATH }}
+          ssh-keyscan -H -p ${{ secrets.PROD_SSH_PORT }} ${{ secrets.PROD_VM2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Deploy VM-2
+        run: |
+          ssh -i ${{ env.SSH_KEY_PATH }} -p ${{ secrets.PROD_SSH_PORT }} \
+            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_VM2_HOST }} bash -s <<'REMOTE'
+          set -e
+          cd /opt/muzilla
+          git pull origin main
+          docker compose -f compose.vm2-app.yml pull --ignore-pull-failures || true
+          docker compose -f compose.vm2-app.yml up -d
+          sleep 5
+          docker compose -f compose.vm2-app.yml exec -T redis redis-cli -a "$(grep ^REDIS_PASSWORD .env | cut -d= -f2)" ping
+          echo "VM-2 OK"
+          REMOTE
 
   # ===== VM-1 (Edge) — последней =====
   deploy-vm1:
     needs: [deploy-vm2]
-    if: >
-      always() &&
-      !failure() &&
-      ((github.event_name == 'workflow_dispatch' &&
-        (github.event.inputs.target == 'all' || github.event.inputs.target == 'vm1'))
-       ||
-       github.event_name == 'repository_dispatch')
+    if: ${{ always() && !failure() && (inputs.target == 'all' || inputs.target == 'vm1') }}
     runs-on: ubuntu-latest
+    env:
+      RUN_MIGRATIONS: ${{ inputs.run_migrations }}
     steps:
-      - name: Deploy to VM-1 (Edge)
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VM1_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            cd /opt/muzilla
-            git pull origin main
-            docker compose -f compose.vm1-edge.yml pull
-            docker compose -f compose.vm1-edge.yml up -d --remove-orphans
-            sleep 10
-            # Миграции — только при репозиторий-диспатч от main, не каждый push
-            if [ "${{ github.event.client_payload.service }}" = "main" ]; then
-              docker compose -f compose.vm1-edge.yml exec -T main php artisan migrate --force
-            fi
-            if [ "${{ github.event.client_payload.service }}" = "discogs" ]; then
-              docker compose -f compose.vm1-edge.yml exec -T discogs php artisan migrate --force
-            fi
-            # Edge nginx кэширует upstream IP — рестарт чтобы подхватить новые контейнеры
-            docker compose -f compose.vm1-edge.yml restart edge
-            curl -sf http://localhost:8080/health || exit 1
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.PROD_SSH_PRIVATE_KEY }}" > ${{ env.SSH_KEY_PATH }}
+          chmod 600 ${{ env.SSH_KEY_PATH }}
+          ssh-keyscan -H -p ${{ secrets.PROD_SSH_PORT }} ${{ secrets.PROD_VM1_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Deploy VM-1
+        run: |
+          ssh -i ${{ env.SSH_KEY_PATH }} -p ${{ secrets.PROD_SSH_PORT }} \
+            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_VM1_HOST }} \
+            RUN_MIGRATIONS="$RUN_MIGRATIONS" bash -s <<'REMOTE'
+          set -e
+          cd /opt/muzilla
+          git pull origin main
+          docker compose -f compose.vm1-edge.yml pull --ignore-pull-failures || true
+          docker compose -f compose.vm1-edge.yml up -d --remove-orphans
+          sleep 10
+          if [ "$RUN_MIGRATIONS" = "true" ]; then
+            echo "Running migrations..."
+            docker compose -f compose.vm1-edge.yml exec -T main php artisan migrate --force || true
+            docker compose -f compose.vm1-edge.yml exec -T discogs php artisan migrate --force || true
+          fi
+          docker compose -f compose.vm1-edge.yml restart edge
+          sleep 5
+          for i in 1 2 3 4 5; do
+            curl -sf http://localhost:8080/health > /dev/null && echo "Health OK ($i)" && break
+            echo "Attempt $i: waiting..."; sleep 5
+            [ $i -eq 5 ] && (echo "Health check failed!" && exit 1)
+          done
+          echo "VM-1 OK"
+          REMOTE

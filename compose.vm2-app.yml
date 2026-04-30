@@ -11,8 +11,10 @@ x-laravel-env: &laravel-env
   DB_PORT: 5432
   DB_USERNAME: ${POSTGRES_USER}
   DB_PASSWORD: ${POSTGRES_PASSWORD}
+  DB_SSLMODE: ${DB_SSLMODE:-require}
   REDIS_HOST: redis
   REDIS_PORT: 6379
+  REDIS_PASSWORD: ${REDIS_PASSWORD}
   CACHE_STORE: redis
   SESSION_DRIVER: redis
   QUEUE_CONNECTION: redis
@@ -26,15 +28,29 @@ x-laravel-env: &laravel-env
   REVERB_HOST: reverb
   REVERB_PORT: 8080
   REVERB_SCHEME: http
+  DISCOGS_API_TOKEN: ${DISCOGS_API_TOKEN}
+  SANCTUM_STATEFUL_DOMAINS: ${SANCTUM_STATEFUL_DOMAINS:-localhost}
+  SESSION_DOMAIN: ${SESSION_DOMAIN}
+  SESSION_SECURE_COOKIE: ${SESSION_SECURE_COOKIE:-false}
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
 
 services:
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes
+    # На публичной сети без VLAN — обязательно с паролем.
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
     volumes:
       - redis_data:/data
     ports:
-      - "${VM2_PRIVATE_IP:-0.0.0.0}:6379:6379"   # слушает только приватный интерфейс
+      # Слушает все интерфейсы; внешка фильтруется UFW (whitelist VM1).
+      - "${VM2_BIND:-0.0.0.0}:6379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     restart: unless-stopped
 
   reverb:
@@ -46,7 +62,7 @@ services:
       APP_URL: ${MAIN_APP_URL}
       DB_DATABASE: ${MAIN_DB_DATABASE}
     ports:
-      - "${VM2_PRIVATE_IP:-0.0.0.0}:8080:8080"
+      - "${VM2_BIND:-0.0.0.0}:8080:8080"
     depends_on: [redis]
     restart: unless-stopped
 
@@ -60,8 +76,6 @@ services:
       DB_DATABASE: ${MAIN_DB_DATABASE}
     depends_on: [redis]
     restart: unless-stopped
-    deploy:
-      replicas: 2
 
   main-scheduler:
     image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
