@@ -41,13 +41,13 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.PROD_SSH_PRIVATE_KEY }}" > ${{ env.SSH_KEY_PATH }}
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ${{ env.SSH_KEY_PATH }}
           chmod 600 ${{ env.SSH_KEY_PATH }}
-          ssh-keyscan -H -p ${{ secrets.PROD_SSH_PORT }} ${{ secrets.PROD_VM3_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H -p ${{ secrets.SSH_PORT }} ${{ secrets.VM3_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
       - name: Deploy VM-3
         run: |
-          ssh -i ${{ env.SSH_KEY_PATH }} -p ${{ secrets.PROD_SSH_PORT }} \
-            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_VM3_HOST }} bash -s <<'REMOTE'
+          ssh -i ${{ env.SSH_KEY_PATH }} -p ${{ secrets.SSH_PORT }} \
+            ${{ secrets.SSH_USER }}@${{ secrets.VM3_HOST }} bash -s <<'REMOTE'
           set -e
           cd /opt/muzilla
           git pull origin main
@@ -67,13 +67,13 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.PROD_SSH_PRIVATE_KEY }}" > ${{ env.SSH_KEY_PATH }}
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ${{ env.SSH_KEY_PATH }}
           chmod 600 ${{ env.SSH_KEY_PATH }}
-          ssh-keyscan -H -p ${{ secrets.PROD_SSH_PORT }} ${{ secrets.PROD_VM2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H -p ${{ secrets.SSH_PORT }} ${{ secrets.VM2_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
       - name: Deploy VM-2
         run: |
-          ssh -i ${{ env.SSH_KEY_PATH }} -p ${{ secrets.PROD_SSH_PORT }} \
-            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_VM2_HOST }} bash -s <<'REMOTE'
+          ssh -i ${{ env.SSH_KEY_PATH }} -p ${{ secrets.SSH_PORT }} \
+            ${{ secrets.SSH_USER }}@${{ secrets.VM2_HOST }} bash -s <<'REMOTE'
           set -e
           cd /opt/muzilla
           git pull origin main
@@ -95,13 +95,13 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.PROD_SSH_PRIVATE_KEY }}" > ${{ env.SSH_KEY_PATH }}
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ${{ env.SSH_KEY_PATH }}
           chmod 600 ${{ env.SSH_KEY_PATH }}
-          ssh-keyscan -H -p ${{ secrets.PROD_SSH_PORT }} ${{ secrets.PROD_VM1_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H -p ${{ secrets.SSH_PORT }} ${{ secrets.VM1_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
       - name: Deploy VM-1
         run: |
-          ssh -i ${{ env.SSH_KEY_PATH }} -p ${{ secrets.PROD_SSH_PORT }} \
-            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_VM1_HOST }} \
+          ssh -i ${{ env.SSH_KEY_PATH }} -p ${{ secrets.SSH_PORT }} \
+            ${{ secrets.SSH_USER }}@${{ secrets.VM1_HOST }} \
             RUN_MIGRATIONS="$RUN_MIGRATIONS" bash -s <<'REMOTE'
           set -e
           cd /opt/muzilla
