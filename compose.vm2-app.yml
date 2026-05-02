@@ -33,6 +33,19 @@ x-laravel-env: &laravel-env
   SESSION_DOMAIN: ${SESSION_DOMAIN}
   SESSION_SECURE_COOKIE: ${SESSION_SECURE_COOKIE:-false}
   TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
+  # S3 Media Storage (Timeweb Cloud) — критично для discogs-queue:
+  # очереди image-loading-high и image-processing пишут изображения именно отсюда.
+  S3_MEDIA_KEY: ${S3_MEDIA_KEY}
+  S3_MEDIA_SECRET: ${S3_MEDIA_SECRET}
+  S3_MEDIA_REGION: ${S3_MEDIA_REGION:-ru-1}
+  S3_MEDIA_BUCKET: ${S3_MEDIA_BUCKET}
+  S3_MEDIA_ENDPOINT: ${S3_MEDIA_ENDPOINT}
+  S3_MEDIA_URL: ${S3_MEDIA_URL}
+  S3_MEDIA_PATH_STYLE: ${S3_MEDIA_PATH_STYLE:-true}
+  # Image Processing
+  IMAGE_DISK: ${IMAGE_DISK:-s3-media}
+  IMAGE_DRIVER: ${IMAGE_DRIVER:-gd}
+  IMAGE_WEBP_QUALITY: ${IMAGE_WEBP_QUALITY:-85}
 
 services:
   redis:

@@ -218,7 +218,30 @@ NUXT_DISCOGS_BASE_URL=http://discogs-web
 # Yandex Maps — обязательно, иначе SSR упадёт при первом рендере главной.
 # Заглушка валидна по форме; в проде впиши реальный ключ.
 NUXT_PUBLIC_YMAPS_API_KEY=00000000-0000-0000-0000-000000000000
+
+# S3 (Timeweb Cloud) — обложки/портреты Discogs, новости, продукты.
+# Без этого discogs-queue положит картинки в локальный диск контейнера и они пропадут.
+S3_MEDIA_KEY=...
+S3_MEDIA_SECRET=...
+S3_MEDIA_BUCKET=muzilla-images
+S3_MEDIA_ENDPOINT=https://s3.twcstorage.ru
+S3_MEDIA_URL=https://s3.twcstorage.ru/muzilla-images
+IMAGE_DISK=s3-media        # для prod; для dev можно оставить public
 ```
+
+### Image Storage (S3 Timeweb)
+
+Дискография хранит ~50М обложек/портретов. На прод все картинки идут в Timeweb Object Storage.
+
+1. В панели Timeweb Cloud → Object Storage создать (или использовать существующий) бакет `muzilla-images`, регион `ru-1`. Сгенерировать access key.
+2. В `.env` (на каждой VM, где живёт Laravel) заполнить `S3_MEDIA_KEY` / `S3_MEDIA_SECRET` / `S3_MEDIA_BUCKET=muzilla-images` / `S3_MEDIA_ENDPOINT=https://s3.twcstorage.ru` / `S3_MEDIA_URL=https://s3.twcstorage.ru/muzilla-images` / `S3_MEDIA_PATH_STYLE=true` / `IMAGE_DISK=s3-media`.
+3. Проверить запись после первого импорта:
+   ```bash
+   aws --endpoint-url=https://s3.twcstorage.ru s3 ls s3://muzilla-images/discogs/ --recursive | head
+   ```
+   Должны появиться `_catalog.webp` файлы по пути `discogs/{a|l|r}{...}/...`.
+
+Очереди в `discogs-queue` (`compose.vm2-app.yml`) выполняют image jobs (`LoadEntityImages`, `LoadFullReleaseImages`, `ProcessImageThumbnails`) — без S3-переменных в этом контейнере картинки не запишутся. FPM-контейнеры `discogs`/`main` (`compose.vm1-edge.yml`) тоже должны видеть переменные — они генерят URL'ы в API ответах.
 
 ## 2. Проверить права на исходники (один раз)
 
@@ -419,10 +442,20 @@ NUXT_PUBLIC_YMAPS_API_KEY=<реальный_yandex_maps_key>
 
 MINIO_ROOT_USER=muzilla
 MINIO_ROOT_PASSWORD=<новый_секрет>
+
+# S3 (Timeweb) — обязательно одинаково на VM-1 и VM-2.
+S3_MEDIA_KEY=<access_key_из_панели_timeweb>
+S3_MEDIA_SECRET=<secret_key>
+S3_MEDIA_BUCKET=muzilla-images
+S3_MEDIA_ENDPOINT=https://s3.twcstorage.ru
+S3_MEDIA_URL=https://s3.twcstorage.ru/muzilla-images
+S3_MEDIA_PATH_STYLE=true
+IMAGE_DISK=s3-media
 ```
 
 **Важно:** `POSTGRES_PASSWORD` на VM-3 и Laravel-параметры в `.env` на VM-1 должны совпадать,
-иначе Laravel не сможет подключиться к Postgres.
+иначе Laravel не сможет подключиться к Postgres. `S3_MEDIA_*` должны совпадать на VM-1
+(там FPM генерит URL) и VM-2 (там discogs-queue реально пишет в S3).
 
 ## 3. Запуск (порядок: VM-3 → VM-2 → VM-1)
 
