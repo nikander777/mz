@@ -109,6 +109,8 @@ services:
       APP_KEY: ${DISCOGS_APP_KEY}
       APP_URL: ${DISCOGS_APP_URL}
       DB_DATABASE: ${DISCOGS_DB_DATABASE}
+    volumes:
+      - /opt/muzilla/discogs-dump:/discogs-dump:ro
     depends_on: [redis]
     restart: unless-stopped
 
