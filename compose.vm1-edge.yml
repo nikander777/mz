@@ -124,6 +124,12 @@ services:
       NUXT_PUBLIC_REVERB_PORT: ${REVERB_PORT}
       NUXT_PUBLIC_REVERB_SCHEME: ${REVERB_SCHEME}
       NUXT_PUBLIC_REVERB_APP_KEY: ${REVERB_APP_KEY}
+      # Private runtimeConfig — apiToken/apiBaseUrl используются Nitro
+      # proxy (server/utils/api.ts) для запросов в discogs FPM. Build-time
+      # дефолт apiToken=mbrainz-FSzz-3333 (несовпадает с INTERNAL_API_TOKEN),
+      # поэтому Nitro шлёт неверный Bearer → 401. Override через NUXT_*.
+      NUXT_API_TOKEN: ${DISCOGS_API_TOKEN}
+      NUXT_API_BASE_URL: http://discogs-web
     restart: unless-stopped
 
   edge:
