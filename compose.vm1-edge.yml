@@ -32,6 +32,10 @@ x-laravel-env: &laravel-env
   REVERB_PORT: 8080
   REVERB_SCHEME: http
   DISCOGS_API_TOKEN: ${DISCOGS_API_TOKEN}
+  # ApiTokenMiddleware в discogs сравнивает Bearer с INTERNAL_API_TOKEN.
+  # Nuxt Nitro (server/utils/api.ts) шлёт DISCOGS_API_TOKEN — поэтому
+  # на стороне discogs это значение должно совпадать. Используем общий.
+  INTERNAL_API_TOKEN: ${DISCOGS_API_TOKEN}
   SANCTUM_STATEFUL_DOMAINS: ${SANCTUM_STATEFUL_DOMAINS:-localhost}
   SESSION_DOMAIN: ${SESSION_DOMAIN}
   SESSION_SECURE_COOKIE: ${SESSION_SECURE_COOKIE:-false}
