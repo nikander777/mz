@@ -116,7 +116,9 @@ services:
       APP_URL: ${DISCOGS_APP_URL}
       DB_DATABASE: ${DISCOGS_DB_DATABASE}
     volumes:
-      - /opt/muzilla/discogs-dump:/discogs-dump:ro
+      # Дополнительный диск VM-2 (примонтирован руками в /mnt/disk2),
+      # под XML-дампы Discogs. Корневой раздел /opt забит другими импортами.
+      - /mnt/disk2:/discogs-dump:ro
     depends_on: [redis]
     restart: unless-stopped
 
