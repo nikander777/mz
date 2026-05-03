@@ -103,6 +103,12 @@ services:
       REVERB_PORT: 443
       REVERB_SCHEME: https
       NUXT_PUBLIC_YMAPS_API_KEY: ${NUXT_PUBLIC_YMAPS_API_KEY}
+      # Override публичного runtime-config: переопределяет build-time
+      # дефолты apiUrl/apiBase из nuxt.config.ts. Без них в client-bundle
+      # летит fallback http://main-web (см. nuxt/Dockerfile ARG).
+      NUXT_PUBLIC_API_URL: ${NUXT_BACKEND_BASE_URL}
+      NUXT_PUBLIC_API_BASE: ${NUXT_BACKEND_BASE_URL}
+      NUXT_PUBLIC_LARAVEL_URL: ${NUXT_BACKEND_BASE_URL}
     restart: unless-stopped
 
   edge:
