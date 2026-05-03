@@ -103,7 +103,7 @@ services:
 
   discogs-queue:
     image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
-    command: php artisan queue:work --tries=3 --timeout=120
+    command: php artisan queue:work --queue=image-loading-high,image-processing,image-loading,default --tries=3 --timeout=300
     environment:
       <<: *laravel-env
       APP_KEY: ${DISCOGS_APP_KEY}
