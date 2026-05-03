@@ -114,6 +114,12 @@ services:
       # cookies Sanctum должен ходить на public-домен → подменяем через
       # NUXT_PUBLIC_SANCTUM_BASE_URL (override уровня runtimeConfig.public.sanctum).
       NUXT_PUBLIC_SANCTUM_BASE_URL: ${NUXT_BACKEND_BASE_URL}
+      # Reverb (WebSocket) — те же грабли: nuxt.config.ts process.env.REVERB_*
+      # фиксируется build-time. NUXT_PUBLIC_REVERB_* override на runtime.
+      NUXT_PUBLIC_REVERB_HOST: ${REVERB_HOST}
+      NUXT_PUBLIC_REVERB_PORT: ${REVERB_PORT}
+      NUXT_PUBLIC_REVERB_SCHEME: ${REVERB_SCHEME}
+      NUXT_PUBLIC_REVERB_APP_KEY: ${REVERB_APP_KEY}
     restart: unless-stopped
 
   edge:
