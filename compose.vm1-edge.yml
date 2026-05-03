@@ -32,6 +32,10 @@ x-laravel-env: &laravel-env
   REVERB_PORT: 8080
   REVERB_SCHEME: http
   DISCOGS_API_TOKEN: ${DISCOGS_API_TOKEN}
+  # Personal access token discogs.com (для DiscogsApiService → api.discogs.com).
+  # Без него все запросы получают 429/401. Лежит отдельно от внутреннего
+  # DISCOGS_API_TOKEN, который используется для middleware api.token.
+  DISCOGS_USER_TOKEN: ${DISCOGS_USER_TOKEN}
   # ApiTokenMiddleware в discogs сравнивает Bearer с INTERNAL_API_TOKEN.
   # Nuxt Nitro (server/utils/api.ts) шлёт DISCOGS_API_TOKEN — поэтому
   # на стороне discogs это значение должно совпадать. Используем общий.

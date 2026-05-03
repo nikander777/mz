@@ -29,6 +29,9 @@ x-laravel-env: &laravel-env
   REVERB_PORT: 8080
   REVERB_SCHEME: http
   DISCOGS_API_TOKEN: ${DISCOGS_API_TOKEN}
+  # Personal access token discogs.com — DiscogsApiService использует его
+  # для запросов в api.discogs.com (без него 429/401).
+  DISCOGS_USER_TOKEN: ${DISCOGS_USER_TOKEN}
   # См. compose.vm1-edge.yml — middleware api.token в discogs сравнивает
   # Bearer-token c INTERNAL_API_TOKEN. Совмещаем с DISCOGS_API_TOKEN.
   INTERNAL_API_TOKEN: ${DISCOGS_API_TOKEN}
