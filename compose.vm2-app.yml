@@ -133,5 +133,16 @@ services:
     depends_on: [redis]
     restart: unless-stopped
 
+  discogs-scheduler:
+    image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
+    command: php artisan schedule:work
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${DISCOGS_APP_KEY}
+      APP_URL: ${DISCOGS_APP_URL}
+      DB_DATABASE: ${DISCOGS_DB_DATABASE}
+    depends_on: [redis]
+    restart: unless-stopped
+
 volumes:
   redis_data:
