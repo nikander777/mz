@@ -126,8 +126,10 @@ services:
       DB_DATABASE: ${DISCOGS_DB_DATABASE}
     volumes:
       # Дополнительный диск VM-2 (примонтирован руками в /mnt/disk2),
-      # под XML-дампы Discogs. Корневой раздел /opt забит другими импортами.
-      - /mnt/disk2:/discogs-dump:ro
+      # под XML-дампы Discogs + part-файлы от discogs:split-xml.
+      # Корневой раздел /opt забит другими импортами. RW нужен для
+      # split-xml который пишет partitions рядом с дампом.
+      - /mnt/disk2:/discogs-dump
     depends_on: [redis]
     restart: unless-stopped
 
