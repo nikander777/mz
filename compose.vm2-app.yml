@@ -61,6 +61,11 @@ x-laravel-env: &laravel-env
   ADMIN_FIRST_NAME: ${ADMIN_FIRST_NAME}
   ADMIN_LAST_NAME: ${ADMIN_LAST_NAME}
   ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+  # SMS-провайдер (sms4b.ru) — main-queue отправляет коды регистрации
+  # асинхронно через Job. main-scheduler триггерит retry для зависших.
+  SMS_PROVIDER: ${SMS_PROVIDER}
+  SMS4B_TOKEN: ${SMS4B_TOKEN}
+  SMS4B_SENDER: ${SMS4B_SENDER}
 
 services:
   redis:

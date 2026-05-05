@@ -51,6 +51,10 @@ x-laravel-env: &laravel-env
   IMAGE_DISK: ${IMAGE_DISK:-public}
   IMAGE_DRIVER: ${IMAGE_DRIVER:-gd}
   IMAGE_WEBP_QUALITY: ${IMAGE_WEBP_QUALITY:-85}
+  # SMS-провайдер (sms4b.ru) — main отправляет коды регистрации.
+  SMS_PROVIDER: ${SMS_PROVIDER}
+  SMS4B_TOKEN: ${SMS4B_TOKEN}
+  SMS4B_SENDER: ${SMS4B_SENDER}
 
 services:
   postgres:
