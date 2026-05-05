@@ -66,7 +66,12 @@ services:
   redis:
     image: redis:7-alpine
     # На публичной сети без VLAN — обязательно с паролем.
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    # maxmemory + noeviction: страховка от OOM-killer'а на VM-2 (8GB RAM).
+    # Когда лимит достигнут, новые INSERT/RPUSH будут падать (а не выгружать
+    # критичные сессии/кеш по LRU). Прецедент: image-loading queue распухал
+    # до 10M jobs (~7GB), redis съедал всю память → OOM убивал redis →
+    # workers падали → импорт стопался.
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "4gb", "--maxmemory-policy", "noeviction"]
     volumes:
       - redis_data:/data
     ports:
