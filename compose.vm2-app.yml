@@ -66,6 +66,18 @@ x-laravel-env: &laravel-env
   SMS_PROVIDER: ${SMS_PROVIDER}
   SMS4B_TOKEN: ${SMS4B_TOKEN}
   SMS4B_SENDER: ${SMS4B_SENDER}
+  # SMTP (mail.netangels.ru) — main-queue асинхронно отправляет email-уведомления
+  # о статусах заказа, выплатах и непрочитанных сообщениях.
+  MAIL_MAILER: ${MAIL_MAILER:-smtp}
+  MAIL_HOST: ${MAIL_HOST:-mail.netangels.ru}
+  MAIL_PORT: ${MAIL_PORT:-587}
+  MAIL_USERNAME: ${MAIL_USERNAME}
+  MAIL_PASSWORD: ${MAIL_PASSWORD}
+  MAIL_ENCRYPTION: ${MAIL_ENCRYPTION:-tls}
+  MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-noreply@muzilla.ru}
+  MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Muzilla}
+  # Базовый URL фронтенда — используется в ссылках внутри email-шаблонов.
+  APP_FRONTEND_URL: ${APP_FRONTEND_URL}
 
 services:
   redis:
