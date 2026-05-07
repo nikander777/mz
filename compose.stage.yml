@@ -67,6 +67,11 @@ x-laravel-env: &laravel-env
   MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Muzilla}
   # Базовый URL фронтенда — используется в ссылках внутри email-шаблонов.
   APP_FRONTEND_URL: ${APP_FRONTEND_URL}
+  # VK ID OAuth (id.vk.ru) — server-side OAuth flow для входа через VK.
+  # Redirect URI должен быть прописан 1-в-1 в кабинете VK ID.
+  VKID_CLIENT_ID: ${VKID_CLIENT_ID}
+  VKID_CLIENT_SECRET: ${VKID_CLIENT_SECRET}
+  VKID_REDIRECT_URI: ${VKID_REDIRECT_URI:-https://dev.muzilla.ru/api/auth/vk/callback}
 
 services:
   postgres:
