@@ -72,6 +72,20 @@ x-laravel-env: &laravel-env
   VKID_CLIENT_ID: ${VKID_CLIENT_ID}
   VKID_CLIENT_SECRET: ${VKID_CLIENT_SECRET}
   VKID_REDIRECT_URI: ${VKID_REDIRECT_URI:-https://dev.muzilla.ru/api/auth/vk/callback}
+  # Session/Sanctum cookie config — Laravel за edge nginx (HTTPS) на dev/prod.
+  # Без них session cookie ставится для пустого домена и без Secure-attr,
+  # OAuth-сессия теряется между redirect и callback (PKCE-verifier).
+  SESSION_DOMAIN: ${SESSION_DOMAIN}
+  SESSION_SECURE_COOKIE: ${SESSION_SECURE_COOKIE:-true}
+  SESSION_SAME_SITE: ${SESSION_SAME_SITE:-lax}
+  SANCTUM_STATEFUL_DOMAINS: ${SANCTUM_STATEFUL_DOMAINS}
+  # Legacy MySQL — задействован только если поднят сервис legacy-mysql (профиль `legacy`).
+  # На обычном stage эти переменные игнорируются (migrate-old:* не вызывается).
+  LEGACY_DB_HOST: ${LEGACY_DB_HOST:-legacy-mysql}
+  LEGACY_DB_PORT: ${LEGACY_DB_PORT:-3306}
+  LEGACY_DB_DATABASE: ${LEGACY_DB_DATABASE:-mz}
+  LEGACY_DB_USERNAME: ${LEGACY_DB_USERNAME:-root}
+  LEGACY_DB_PASSWORD: ${LEGACY_DB_PASSWORD:-}
 
 services:
   postgres:
@@ -270,9 +284,33 @@ services:
       - reverb
     restart: unless-stopped
 
+  # Legacy MySQL — поднимается только под профилем `legacy` для разовой миграции старых данных.
+  # Запуск: docker compose -f compose.stage.yml --profile legacy up -d legacy-mysql
+  # Контейнер живёт только во внутренней docker-сети (никаких publish-портов).
+  # См. DEPLOY.md раздел 14 «Перенос legacy-данных».
+  legacy-mysql:
+    image: mysql:8.0
+    profiles: ["legacy"]
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --max-allowed-packet=512M
+    environment:
+      MYSQL_ROOT_PASSWORD: ${LEGACY_DB_PASSWORD}
+      MYSQL_DATABASE: ${LEGACY_DB_DATABASE:-mz}
+    volumes:
+      - legacy_mysql_data:/var/lib/mysql
+      - ./legacy:/dump:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-p${LEGACY_DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: "no"
+
 volumes:
   pg_data:
   redis_data:
   meili_data:
   main_storage:
   discogs_storage:
+  legacy_mysql_data:
