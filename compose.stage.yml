@@ -39,6 +39,11 @@ x-laravel-env: &laravel-env
   REVERB_PORT: 8080
   REVERB_SCHEME: http
   DISCOGS_API_TOKEN: ${DISCOGS_API_TOKEN}
+  # main ходит во внутренний discogs API (например, migrate-old:products --remap-releases).
+  # DISCOGS_API_TOKEN отправляется Bearer'ом, на стороне discogs ApiTokenMiddleware
+  # сравнивает с INTERNAL_API_TOKEN — поэтому оба значения равны.
+  DISCOGS_API_URL: http://discogs-web
+  INTERNAL_API_TOKEN: ${DISCOGS_API_TOKEN}
   # S3 Media Storage (Timeweb Cloud) — общий бакет для main и discogs
   S3_MEDIA_KEY: ${S3_MEDIA_KEY}
   S3_MEDIA_SECRET: ${S3_MEDIA_SECRET}
