@@ -667,7 +667,179 @@ make health
 
 ---
 
-## 13. Контакты и зоны ответственности
+## 13. Перенос legacy-данных (Yii2 MySQL → Laravel Postgres)
+
+Старый портал на Yii2 живёт в MySQL (база `mz`, ~миллионы users/products/orders/reviews).
+В новой системе её нет — мигрируем через `migrate-old:*` команды в main-сервисе.
+
+### Топология миграции
+
+| Среда | Источник MySQL | Канал | Целевая Postgres БД |
+|-------|----------------|-------|---------------------|
+| Локалка | `127.0.0.1:3306` (родной MySQL мака) | прямой | `main` (sqlite/pgsql на маке) |
+| Stage (`dev.muzilla.ru`) | `legacy-mysql` контейнер из `compose.stage.yml --profile legacy` | docker-сеть | postgres контейнер stage |
+| Prod | `legacy-mysql` контейнер на VM-3 (`compose.legacy-mysql.yml`) | UFW whitelist VM-1 → 33060 | VM-3 postgres `main` |
+
+### Полный список команд
+
+`migrate-old:all` — оркестратор. Внутри:
+```
+migrate-old:categories  → migrate-old:brands     → migrate-old:users
+                       → migrate-old:oauth      → migrate-old:products
+                       → migrate-old:orders     → migrate-old:reviews
+                       → migrate-old:messages   → migrate-old:favorites
+                       → migrate-old:blocked-users → migrate-old:news
+```
+
+Опции (наследуются всеми подкомандами):
+- `--dry-run` — без записи в БД
+- `--limit=N` — не более N строк на каждую сущность (полезно для проверок)
+- `--fresh` — удалить ранее мигрированные записи (по `legacy_id`) перед запуском
+- `--skip-photos` — для `products` и `news`: НЕ диспатчить `legacy-photos` job'ы (только данные)
+- `--remap-releases` (только `products`!): stage-режим — подменить `release_id` на random ID
+  из фейковой дискографии (80% связь, 20% null), денормализовать поля релиза в товары.
+
+### Stage runbook (single-host)
+
+```bash
+# 1. На локалке: дамп MySQL
+mysqldump --single-transaction --quick --max-allowed-packet=512M \
+  -uroot mz | gzip -9 > /tmp/mz-legacy.sql.gz
+
+# 2. Положить дамп на stage VM
+ssh root@194.87.86.90 'mkdir -p /opt/muzilla/legacy'
+scp -i ~/.ssh/id_rsa /tmp/mz-legacy.sql.gz root@194.87.86.90:/opt/muzilla/legacy/
+
+# 3. Поднять legacy-mysql сервис (профиль `legacy`) + импортировать дамп
+ssh root@194.87.86.90 'cd /opt/muzilla && \
+  docker compose -f compose.stage.yml --profile legacy up -d legacy-mysql && \
+  sleep 15 && \
+  docker compose -f compose.stage.yml exec -T legacy-mysql \
+    bash -c "gunzip -c /dump/mz-legacy.sql.gz | mysql -uroot -p\$MYSQL_ROOT_PASSWORD mz"'
+
+# 4. Засеять фейковую дискографию в discogs БД (1000 релизов с placeholder обложками)
+ssh root@194.87.86.90 'cd /opt/muzilla && \
+  docker compose -f compose.stage.yml exec -T discogs \
+    php artisan db:seed --class=DiscographySeeder --force'
+
+# 5. Полная миграция БЕЗ фоток + подмена release_id на фейковую дискографию
+ssh root@194.87.86.90 'cd /opt/muzilla && \
+  docker compose -f compose.stage.yml exec -T main \
+    php artisan migrate-old:all --skip-photos && \
+  docker compose -f compose.stage.yml exec -T main \
+    php artisan migrate-old:products --skip-photos --remap-releases --fresh'
+# (вторая команда нужна именно потому что --remap-releases есть только в products,
+#  --all эту опцию игнорирует; products пересоздаются через --fresh).
+
+# 6. Поверх — DemoSeeder (5 демо-юзеров + 10-15 hardcoded товаров со stock-фотками)
+ssh root@194.87.86.90 'cd /opt/muzilla && \
+  docker compose -f compose.stage.yml exec -T main \
+    php artisan db:seed --class=DemoSeeder --force'
+
+# 7. ОБЯЗАТЕЛЬНО — снести legacy-mysql и удалить дамп
+ssh root@194.87.86.90 'cd /opt/muzilla && \
+  docker compose -f compose.stage.yml --profile legacy down -v && \
+  rm /opt/muzilla/legacy/mz-legacy.sql.gz'
+
+# 8. Проверка
+bash scripts/deploy/health-check.sh --url https://dev.muzilla.ru
+ssh root@194.87.86.90 'cd /opt/muzilla && \
+  docker compose -f compose.stage.yml exec -T main php artisan migrate-old:stats'
+```
+
+### Prod runbook (VM-1/VM-2/VM-3)
+
+> **Запускать только после завершения XML-импорта дискографии** (`Release::count() ≈ 19M`
+> стабильно). Иначе legacy-mysql на VM-3 заберёт IO и память у Postgres.
+
+```bash
+# 1. На локалке: дамп
+mysqldump --single-transaction --quick --max-allowed-packet=512M \
+  -uroot mz | gzip -9 > /tmp/mz-legacy.sql.gz
+
+# 2. Положить на VM-3
+ssh root@92.255.105.112 'mkdir -p /opt/muzilla/legacy'
+scp -i ~/.ssh/id_rsa /tmp/mz-legacy.sql.gz root@92.255.105.112:/opt/muzilla/legacy/
+
+# 3. Сгенерировать LEGACY_MYSQL_PASSWORD на VM-3 и положить в /opt/muzilla/.env
+ssh root@92.255.105.112 'echo "LEGACY_MYSQL_PASSWORD=$(openssl rand -hex 32)" >> /opt/muzilla/.env'
+
+# 4. Поднять legacy-mysql, импортировать дамп, открыть UFW для VM-1
+ssh root@92.255.105.112 'cd /opt/muzilla && \
+  docker compose -f compose.legacy-mysql.yml up -d && \
+  sleep 15 && \
+  docker compose -f compose.legacy-mysql.yml exec -T legacy-mysql \
+    bash -c "gunzip -c /dump/mz-legacy.sql.gz | mysql -uroot -p\$MYSQL_ROOT_PASSWORD mz" && \
+  ufw allow from 90.156.211.143 to any port 33060'
+
+# 5. На VM-1 в /opt/muzilla/.env прописать LEGACY_DB_*
+ssh root@90.156.211.143 'cat >> /opt/muzilla/.env <<EOF
+LEGACY_DB_HOST=92.255.105.112
+LEGACY_DB_PORT=33060
+LEGACY_DB_DATABASE=mz
+LEGACY_DB_USERNAME=root
+LEGACY_DB_PASSWORD=<значение_LEGACY_MYSQL_PASSWORD_с_VM3>
+EOF'
+ssh root@90.156.211.143 'cd /opt/muzilla && \
+  docker compose -f compose.vm1-edge.yml up -d --force-recreate main main-queue'
+
+# 6. Полная миграция (С фотками — БЕЗ --remap-releases, реальные релизы есть в discogs БД)
+ssh root@90.156.211.143 'cd /opt/muzilla && \
+  docker compose -f compose.vm1-edge.yml exec -T main \
+    php artisan migrate-old:all'
+
+# 7. Worker'ы legacy-photos на VM-2 (CDN images.muzilla.ru → S3 Timeweb)
+ssh root@85.193.81.19 'cd /opt/muzilla && \
+  docker compose -f compose.vm2-app.yml exec -T main-queue \
+    php artisan queue:work --queue=legacy-photos --tries=3 --timeout=300 &'
+# Мониторим: redis-cli -h redis -a $REDIS_PASSWORD llen queues:legacy-photos
+
+# 8. ОБЯЗАТЕЛЬНО — снести legacy-mysql + UFW + дамп после завершения
+ssh root@92.255.105.112 'cd /opt/muzilla && \
+  docker compose -f compose.legacy-mysql.yml down -v && \
+  ufw delete allow from 90.156.211.143 to any port 33060 && \
+  rm /opt/muzilla/legacy/mz-legacy.sql.gz && \
+  sed -i "/^LEGACY_MYSQL_PASSWORD=/d" /opt/muzilla/.env'
+ssh root@90.156.211.143 'sed -i "/^LEGACY_DB_/d" /opt/muzilla/.env'
+
+# 9. Проверка
+bash scripts/deploy/health-check.sh --url https://new.muzilla.ru
+ssh root@90.156.211.143 'cd /opt/muzilla && \
+  docker compose -f compose.vm1-edge.yml exec -T main php artisan migrate-old:stats'
+```
+
+### Альтернативный канал для prod: SSH reverse-tunnel с локалки
+
+Если поднимать legacy-mysql на VM-3 не хочется — можно запустить миграцию через туннель:
+
+```bash
+# На локалке — оставить висеть на время миграции (6-12 часов):
+ssh -i ~/.ssh/id_rsa -R 33060:127.0.0.1:3306 root@90.156.211.143 -N
+
+# На VM-1 в /opt/muzilla/.env:
+LEGACY_DB_HOST=host.docker.internal   # или 172.17.0.1 — IP docker-bridge gateway
+LEGACY_DB_PORT=33060
+
+# Дальше как обычно: php artisan migrate-old:all
+```
+
+Минус: локалка должна быть включена всё время миграции; падение SSH = разорванная очередь.
+
+### Картинки на проде
+
+`LegacyPhotoMigrator` (`main/app/Console/Commands/Migration/Support/LegacyPhotoMigrator.php`)
+автоматически качает фото с `https://images.muzilla.ru/images/products/{legacy_id}/{filename}`
+и кладёт в S3 `muzilla-images`. На stage `--skip-photos` пропускает этот шаг полностью.
+
+### Откат миграции
+
+`migrate-old:all --fresh` — централизованно удаляет все записи с `legacy_id IS NOT NULL`
+(см. `MigrateAllCommand::cleanupFresh()`). НЕ трогает админа, демо-данные и DiscographySeeder.
+Запускать осторожно: на проде это снесёт все мигрированные товары/юзеров/заказы.
+
+---
+
+## 14. Контакты и зоны ответственности
 
 - **Инфраструктура / деплой** — `nikander@me.com`
 - **GitHub Actions / GHCR** — нужен `OPS_DEPLOY_TOKEN` PAT, лежит в Bitwarden (?)
