@@ -230,6 +230,10 @@ services:
       APP_KEY: ${MAIN_APP_KEY}
       APP_URL: ${MAIN_APP_URL}
       DB_DATABASE: ${MAIN_DB_DATABASE}
+    # Shared storage с main — нужно для доступа к public/storage/shipments/*
+    # (PDF этикеток, QR PNG) при отправке broadcast'ов и в очередях.
+    volumes:
+      - main_storage:/var/www/html/storage
     depends_on:
       - main
     restart: unless-stopped
@@ -242,6 +246,11 @@ services:
       APP_KEY: ${MAIN_APP_KEY}
       APP_URL: ${MAIN_APP_URL}
       DB_DATABASE: ${MAIN_DB_DATABASE}
+    # Shared storage с main — критично для queue worker'а: без него notification'ы
+    # с inline QR (через $message->embed путь к файлу) не находят PNG, attachment'ы
+    # из storage не отправляются, отложенная обработка файлов ломается.
+    volumes:
+      - main_storage:/var/www/html/storage
     depends_on:
       - main
     restart: unless-stopped
@@ -254,6 +263,9 @@ services:
       APP_KEY: ${MAIN_APP_KEY}
       APP_URL: ${MAIN_APP_URL}
       DB_DATABASE: ${MAIN_DB_DATABASE}
+    # Shared storage с main — scheduled job'ы могут читать/писать те же файлы.
+    volumes:
+      - main_storage:/var/www/html/storage
     depends_on:
       - main
     restart: unless-stopped
