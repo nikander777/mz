@@ -83,6 +83,11 @@ x-laravel-env: &laravel-env
   IMAGE_DISK: ${IMAGE_DISK:-public}
   IMAGE_DRIVER: ${IMAGE_DRIVER:-gd}
   IMAGE_WEBP_QUALITY: ${IMAGE_WEBP_QUALITY:-85}
+  # Russian Post (Pochta Russia) API — расчёт доставки, треки, QR-стикеры.
+  RUSSIAN_POST_TOKEN: ${RUSSIAN_POST_TOKEN}
+  RUSSIAN_POST_KEY: ${RUSSIAN_POST_KEY}
+  RUSSIAN_POST_LOGIN: ${RUSSIAN_POST_LOGIN}
+  RUSSIAN_POST_PASSWORD: ${RUSSIAN_POST_PASSWORD}
   # SMS-провайдер (sms4b.ru) — main отправляет коды регистрации.
   SMS_PROVIDER: ${SMS_PROVIDER}
   SMS4B_TOKEN: ${SMS4B_TOKEN}
