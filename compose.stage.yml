@@ -88,7 +88,11 @@ x-laravel-env: &laravel-env
   RUSSIAN_POST_KEY: ${RUSSIAN_POST_KEY}
   RUSSIAN_POST_LOGIN: ${RUSSIAN_POST_LOGIN}
   RUSSIAN_POST_PASSWORD: ${RUSSIAN_POST_PASSWORD}
-  RUSSIAN_POST_DEFAULT_OPS_CODE: ${RUSSIAN_POST_DEFAULT_OPS_CODE}
+  # Временный override ОПС отправителя — все заказы шлются из этого индекса
+  # вместо адреса/ПВЗ продавца. Нужен пока кабинет Otpravka (ООО М9, ЕКБ)
+  # обслуживает не все регионы РФ. Убрать из .env когда подключат всё —
+  # postoffice-code будет браться из orderData['sender']['postal_code'].
+  RUSSIAN_POST_FORCE_OPS_CODE: ${RUSSIAN_POST_FORCE_OPS_CODE}
   # SMS-провайдер (sms4b.ru) — main отправляет коды регистрации.
   SMS_PROVIDER: ${SMS_PROVIDER}
   SMS4B_TOKEN: ${SMS4B_TOKEN}
