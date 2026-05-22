@@ -35,8 +35,15 @@ jobs:
             SERVICE="$SERVICE" IS_MANUAL="$IS_MANUAL" bash -s <<'REMOTE'
           set -e
           cd /opt/muzilla
-          echo "=== Pulling ops repo ==="
-          git pull origin main
+          echo "=== Syncing ops repo (hard reset to origin/main) ==="
+          # fetch + reset --hard вместо git pull: pull падает, когда на VM есть
+          # незакоммиченный hotfix в том же файле, что приходит из апстрима
+          # (даже если правка байт-в-байт совпадает с upstream — git всё равно
+          # отказывается мержить). Reset --hard делает деплой идемпотентным,
+          # но затирает любые ручные правки tracked-файлов на сервере.
+          # Untracked файлы (.env, *.backup-*) не трогаются.
+          git fetch origin main
+          git reset --hard origin/main
           echo "=== Pulling images from GHCR (best-effort) ==="
           docker compose -f compose.stage.yml pull --ignore-pull-failures || true
           echo "=== Recreating containers ==="
