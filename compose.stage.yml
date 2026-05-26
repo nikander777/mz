@@ -97,6 +97,9 @@ x-laravel-env: &laravel-env
   SMS_PROVIDER: ${SMS_PROVIDER}
   SMS4B_TOKEN: ${SMS4B_TOKEN}
   SMS4B_SENDER: ${SMS4B_SENDER}
+  # DaData — подсказки адресов, городов, почтовых отделений.
+  DADATA_API_KEY: ${DADATA_API_KEY}
+  DADATA_SECRET_KEY: ${DADATA_SECRET_KEY}
   # SMTP (mail.netangels.ru) — main асинхронно отправляет email-уведомления
   # о статусах заказа, выплатах и непрочитанных сообщениях.
   MAIL_MAILER: ${MAIL_MAILER:-smtp}
