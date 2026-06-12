@@ -96,6 +96,10 @@ services:
       DISCOGS_DB_DATABASE: ${MAIN_DISCOGS_DB_DATABASE}
       DISCOGS_DB_USERNAME: ${POSTGRES_USER}
       DISCOGS_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # HTTP-прокси main → discogs (поиск дискографии, карточка релиза,
+      # выбор релиза для товара). Без него config services.discogs.api_url
+      # падает в дефолт http://localhost:8001 и весь /api/discogs/* отдаёт 500.
+      DISCOGS_API_URL: http://discogs-web
     volumes:
       - main_storage:/var/www/html/storage
     restart: unless-stopped
