@@ -96,6 +96,16 @@ x-laravel-env: &laravel-env
   # обслуживает не все регионы РФ. Убрать из .env когда подключат всё —
   # postoffice-code будет браться из orderData['sender']['postal_code'].
   RUSSIAN_POST_FORCE_OPS_CODE: ${RUSSIAN_POST_FORCE_OPS_CODE}
+  # СДЭК (CDEK) API v2 — ПВЗ на карте + создание заказов/тарифы. Каталог ПВЗ
+  # синхронизируется в БД командой cdek:sync-pickup-points (крон 04:00), карта
+  # читает точки bbox-запросом. Боевые креды и CDEK_SANDBOX=false — в .env на
+  # сервере (в git не коммитятся).
+  CDEK_ACCOUNT: ${CDEK_ACCOUNT}
+  CDEK_SECURE: ${CDEK_SECURE}
+  CDEK_SANDBOX: ${CDEK_SANDBOX:-true}
+  CDEK_BASE_URL: ${CDEK_BASE_URL:-}
+  CDEK_TIMEOUT: ${CDEK_TIMEOUT:-30}
+  CDEK_FORCE_SHIPMENT_POINT: ${CDEK_FORCE_SHIPMENT_POINT:-}
   # SMS-провайдер (sms4b.ru) — main отправляет коды регистрации.
   SMS_PROVIDER: ${SMS_PROVIDER}
   SMS4B_TOKEN: ${SMS4B_TOKEN}
