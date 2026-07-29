@@ -24,6 +24,9 @@ x-laravel-env: &laravel-env
   MEILISEARCH_KEY: ${MEILI_MASTER_KEY}
   # Драйвер каталога discogs: database (Postgres) | meili. Флипается через .env.
   DISCO_CATALOG_DRIVER: ${DISCO_CATALOG_DRIVER:-database}
+  # Раздел Hi-Fi (config/features.php). Выключен на старте. Парный флаг
+  # фронта — NUXT_PUBLIC_FEATURE_HIFI в compose.vm1-edge.yml.
+  MZ_FEATURE_HIFI: ${MZ_FEATURE_HIFI:-false}
   REVERB_APP_ID: ${REVERB_APP_ID}
   REVERB_APP_KEY: ${REVERB_APP_KEY}
   REVERB_APP_SECRET: ${REVERB_APP_SECRET}

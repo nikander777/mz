@@ -148,6 +148,8 @@ services:
       NUXT_PUBLIC_API_URL: ${NUXT_BACKEND_BASE_URL}
       NUXT_PUBLIC_API_BASE: ${NUXT_BACKEND_BASE_URL}
       NUXT_PUBLIC_LARAVEL_URL: ${NUXT_BACKEND_BASE_URL}
+      # Раздел Hi-Fi. Должен совпадать с MZ_FEATURE_HIFI бэкенда (vm2).
+      NUXT_PUBLIC_FEATURE_HIFI: ${MZ_FEATURE_HIFI:-false}
       # nuxt-auth-sanctum зашивает baseUrl из process.env.LARAVEL_URL во время
       # build (это http://main-web — внутренний docker host). Для client-side
       # cookies Sanctum должен ходить на public-домен → подменяем через

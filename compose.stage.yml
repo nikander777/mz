@@ -35,6 +35,9 @@ x-laravel-env: &laravel-env
   # Драйвер каталога: meili|database (откат — database). Управляется из .env.
   MZ_CATALOG_DRIVER_PRODUCTS: ${MZ_CATALOG_DRIVER_PRODUCTS:-database}
   DISCO_CATALOG_DRIVER: ${DISCO_CATALOG_DRIVER:-database}
+  # Раздел Hi-Fi (config/features.php). Выключен на старте: логистика под
+  # крупногабаритные товары не готова. Парный флаг фронта — ниже, у nuxt.
+  MZ_FEATURE_HIFI: ${MZ_FEATURE_HIFI:-false}
   REVERB_APP_ID: ${REVERB_APP_ID}
   REVERB_APP_KEY: ${REVERB_APP_KEY}
   REVERB_APP_SECRET: ${REVERB_APP_SECRET}
@@ -337,6 +340,11 @@ services:
       NUXT_PUBLIC_SANCTUM_BASE_URL: ${NUXT_PUBLIC_SANCTUM_BASE_URL}
       NUXT_PUBLIC_LARAVEL_URL: ${NUXT_PUBLIC_LARAVEL_URL}
       NUXT_PUBLIC_API_URL: ${NUXT_PUBLIC_API_URL}
+      # Раздел Hi-Fi. Значение public-конфига переопределяется на рантайме,
+      # пересборка образа не нужна — достаточно force-recreate контейнера.
+      # Должен совпадать с MZ_FEATURE_HIFI бэкенда, иначе меню и витрина
+      # разъедутся (создать/продать всё равно не даст бэкенд).
+      NUXT_PUBLIC_FEATURE_HIFI: ${MZ_FEATURE_HIFI:-false}
       NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE}
       NUXT_PUBLIC_REVERB_HOST: ${NUXT_PUBLIC_REVERB_HOST}
       NUXT_PUBLIC_REVERB_PORT: ${NUXT_PUBLIC_REVERB_PORT}
