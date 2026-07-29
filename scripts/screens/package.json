@@ -1,0 +1,14 @@
+{
+  "name": "muzilla-screens",
+  "private": true,
+  "type": "module",
+  "description": "Скриншоты dev.muzilla.ru для документации (puppeteer-core + системный Chrome)",
+  "scripts": {
+    "capture:public": "node capture.mjs public",
+    "login": "node capture.mjs login",
+    "capture:auth": "node capture.mjs auth"
+  },
+  "dependencies": {
+    "puppeteer-core": "^23.11.1"
+  }
+}

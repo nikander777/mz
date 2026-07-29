@@ -1,0 +1,17 @@
+/* Авто-нумерация разделов (H2) внутри страниц-процессов.
+   Формат: «<номер страницы>.<номер раздела>» — например 7.1, 7.2…
+   Номер страницы приходит из темы (ProcessSectionNumber.vue) в переменной
+   --proc-no, а флаг data-proc-active включает нумерацию только на процессах.
+   Текст заголовков и их якоря НЕ меняются — внутренние ссылки не ломаются. */
+:root[data-proc-active] .vp-doc {
+  counter-reset: proc-h2;
+}
+:root[data-proc-active] .vp-doc h2 {
+  counter-increment: proc-h2;
+}
+:root[data-proc-active] .vp-doc h2::before {
+  content: var(--proc-no) '.' counter(proc-h2) ' ';
+  color: var(--vp-c-brand-1);
+  font-weight: 600;
+  margin-right: 0.1em;
+}

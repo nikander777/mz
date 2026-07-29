@@ -1,0 +1,18 @@
+# Изолированный статический сайт документации MUZILLA (VitePress) для стейджа.
+# Отдельный compose-проект — НЕ пересекается с основным стеком `muzilla`
+# (его `--remove-orphans` этот контейнер не тронет).
+#
+# Деплой на стейдже (в /opt/muzilla-docs):
+#   docker compose -p muzilla-docs -f compose.docs.yml up -d
+# Остановить/снести:
+#   docker compose -p muzilla-docs -f compose.docs.yml down
+services:
+  docs:
+    image: nginx:1.27-alpine
+    container_name: muzilla-docs
+    restart: unless-stopped
+    ports:
+      - "8088:80"
+    volumes:
+      - ./dist:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
