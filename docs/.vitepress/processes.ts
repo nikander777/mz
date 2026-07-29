@@ -24,7 +24,7 @@ export const processPages: ProcessPage[] = [
   { text: 'Каталог / маркетплейс', link: '/overview/marketplace', path: 'overview/marketplace.md', status: '🔴' },
   { text: 'Карточка товара', link: '/overview/product', path: 'overview/product.md', status: '🔴' },
   { text: 'Работа с товарами', link: '/overview/seller-products', path: 'overview/seller-products.md', status: '🔴' },
-  { text: 'Формат файла загрузки лотов', link: '/overview/product-import-format', path: 'overview/product-import-format.md', status: '🟢' },
+  { text: 'Формат файла загрузки лотов', link: '/overview/product-import-format', path: 'overview/product-import-format.md', status: '🔴' },
   { text: 'Корзина и оформление', link: '/overview/cart-checkout', path: 'overview/cart-checkout.md', status: '🔴' },
   { text: 'Заказы: жизненный цикл', link: '/overview/orders', path: 'overview/orders.md', status: '🔴' },
   { text: 'Оплата', link: '/overview/payment', path: 'overview/payment.md', status: '🔴' },
