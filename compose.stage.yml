@@ -77,6 +77,35 @@ x-laravel-env: &laravel-env
   MONETA_ACCOUNT_PROTOTYPE: ${MONETA_ACCOUNT_PROTOTYPE}
   MONETA_TEST_SBP_PHONE: ${MONETA_TEST_SBP_PHONE}
   MONETA_TEST_SBP_BANK_ID: ${MONETA_TEST_SBP_BANK_ID}
+  # === Платежи: касса ПА ООО «ПЭЙ ЭНИ ВЭЙ» (54-ФЗ) ===
+  # Драйвер НОВЫХ заказов: moneta (историческая схема, чеков нет) | bpa
+  # (JSON API с номенклатурой, чек 54-ФЗ пробивает ККТ агрегатора).
+  # Уже созданные заказы не затрагиваются: провайдер каждого записан в
+  # order_payments.provider и оттуда резолвится до конца жизни заказа.
+  PAYMENTS_DRIVER: ${PAYMENTS_DRIVER:-moneta}
+  BPA_KEY: ${BPA_KEY}
+  BPA_SECRET: ${BPA_SECRET}
+  BPA_CREDIT_ACCOUNT: ${BPA_CREDIT_ACCOUNT}
+  BPA_DEBIT_ACCOUNT: ${BPA_DEBIT_ACCOUNT}
+  BPA_API_URL: ${BPA_API_URL:-https://bpa.payanyway.ru/api}
+  BPA_ASSISTANT_URL: ${BPA_ASSISTANT_URL:-https://www.payanyway.ru/assistant.htm}
+  BPA_USE_STUB: ${BPA_USE_STUB:-false}
+  BPA_QR_TTL: ${BPA_QR_TTL:-30}
+  # Уведомления агрегатора подписи НЕ имеют. Секрет в пути роута
+  # /api/webhook/bpa/{secret}; пусто = эндпоинт отвечает 503.
+  BPA_WEBHOOK_SECRET: ${BPA_WEBHOOK_SECRET}
+  BPA_WEBHOOK_ALLOWED_IPS: ${BPA_WEBHOOK_ALLOWED_IPS}
+  # Главный эшелон защиты: состояние денег берём из /api/getoperation, а не из
+  # тела уведомления. Выключается только на время работы с эмулятором.
+  BPA_WEBHOOK_VERIFY_VIA_API: ${BPA_WEBHOOK_VERIFY_VIA_API:-true}
+  BPA_ALLOWLIST_BUYER_IDS: ${BPA_ALLOWLIST_BUYER_IDS}
+  BPA_ALLOWLIST_SELLER_IDS: ${BPA_ALLOWLIST_SELLER_IDS}
+  # Реквизиты площадки для строки доставки в чеке: у доставки нет продавца,
+  # договор с перевозчиком заключён площадкой.
+  PAYMENTS_PLATFORM_ACCOUNT: ${PAYMENTS_PLATFORM_ACCOUNT}
+  PAYMENTS_PLATFORM_INN: ${PAYMENTS_PLATFORM_INN}
+  PAYMENTS_PLATFORM_NAME: ${PAYMENTS_PLATFORM_NAME:-OOO M9}
+  PAYMENTS_PLATFORM_PHONE: ${PAYMENTS_PLATFORM_PHONE}
   # S3 Media Storage (Timeweb Cloud) — общий бакет для main и discogs
   S3_MEDIA_KEY: ${S3_MEDIA_KEY}
   S3_MEDIA_SECRET: ${S3_MEDIA_SECRET}
