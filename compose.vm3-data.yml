@@ -33,11 +33,16 @@ services:
       -c ssl_key_file=/var/lib/postgresql/data/server.key
 
   meilisearch:
-    image: getmeili/meilisearch:v1.6
+    image: getmeili/meilisearch:v1.53.1
     environment:
       MEILI_ENV: production
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
       MEILI_NO_ANALYTICS: "true"
+      # Суточный снапшот базы. 16.06.2026 LMDB индекса releases словила
+      # повреждение на записи, восстанавливать было нечем — дампов не делали,
+      # и раздел лежал два месяца. Снапшот перезаписывается на месте.
+      MEILI_SCHEDULE_SNAPSHOT: "86400"
+      MEILI_SNAPSHOT_DIR: /meili_data/snapshots
     # Дефолтный soft-лимит docker = 1024 fd: settingsUpdate на индексе releases
     # (19M документов) падает с too_many_open_files (os error 24).
     ulimits:
@@ -45,9 +50,19 @@ services:
         soft: 524288
         hard: 524288
     volumes:
-      - meili_data:/meili_data
+      # v2 — том, пересозданный 24.08.2026 при переезде 1.6.2 → 1.53.1.
+      # Старый meili_data остался с битым индексом releases.
+      - meili_data_v2:/meili_data
     ports:
       - "${VM3_BIND:-0.0.0.0}:7700:7700"
+    # Без healthcheck крэш-петля (restart: unless-stopped + SIGABRT раз в минуту)
+    # никак не проявляется снаружи: контейнер вечно «Restarting», алертов нет.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:7700/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
     restart: unless-stopped
 
   minio:
@@ -81,5 +96,9 @@ services:
 
 volumes:
   pg_data:
+  # meili_data — том Meilisearch 1.6.2, выведен из эксплуатации 24.08.2026
+  # (повреждённая LMDB индекса releases). Объявлен, чтобы compose не терял
+  # его из виду до удаления вручную.
   meili_data:
+  meili_data_v2:
   minio_data:
