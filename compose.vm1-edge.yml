@@ -84,6 +84,37 @@ x-laravel-env: &laravel-env
   # Базовый URL фронтенда — используется в ссылках внутри email-шаблонов.
   APP_FRONTEND_URL: ${APP_FRONTEND_URL}
 
+  # === Платежи: касса ПА ООО «ПЭЙ ЭНИ ВЭЙ» (54-ФЗ) ===
+  # ⚠️ PAYMENTS_DRIVER здесь НАМЕРЕННО без значения по умолчанию `bpa`:
+  # переключение включает боевой приём денег и фискализацию. Включать явно
+  # в .env на сервере и только после того, как:
+  #   1) продавцы зарегистрированы в НКО и у них реальные счета 40821
+  #      (сейчас в базе фиктивные — боевая касса их отвергнет);
+  #   2) заполнен PAYMENTS_PLATFORM_ACCOUNT — счёт площадки для строки
+  #      доставки, без него сборка чека падает;
+  #   3) подняты queue и scheduler: подтверждение холдов, сверка операций
+  #      и разблокировка выплат живут в фоновых джобах.
+  PAYMENTS_DRIVER: ${PAYMENTS_DRIVER:-moneta}
+  BPA_KEY: ${BPA_KEY}
+  BPA_SECRET: ${BPA_SECRET}
+  BPA_CREDIT_ACCOUNT: ${BPA_CREDIT_ACCOUNT}
+  BPA_DEBIT_ACCOUNT: ${BPA_DEBIT_ACCOUNT}
+  BPA_API_URL: ${BPA_API_URL:-https://bpa.payanyway.ru/api}
+  BPA_ASSISTANT_URL: ${BPA_ASSISTANT_URL:-https://www.payanyway.ru/assistant.htm}
+  BPA_USE_STUB: ${BPA_USE_STUB:-false}
+  BPA_QR_TTL: ${BPA_QR_TTL:-30}
+  # Уведомления агрегатора подписи НЕ имеют — секрет в пути роута
+  # /api/webhook/bpa/{secret}; пусто = эндпоинт закрыт (503).
+  BPA_WEBHOOK_SECRET: ${BPA_WEBHOOK_SECRET}
+  BPA_WEBHOOK_ALLOWED_IPS: ${BPA_WEBHOOK_ALLOWED_IPS}
+  BPA_WEBHOOK_VERIFY_VIA_API: ${BPA_WEBHOOK_VERIFY_VIA_API:-true}
+  BPA_ALLOWLIST_BUYER_IDS: ${BPA_ALLOWLIST_BUYER_IDS}
+  BPA_ALLOWLIST_SELLER_IDS: ${BPA_ALLOWLIST_SELLER_IDS}
+  PAYMENTS_PLATFORM_ACCOUNT: ${PAYMENTS_PLATFORM_ACCOUNT}
+  PAYMENTS_PLATFORM_INN: ${PAYMENTS_PLATFORM_INN}
+  PAYMENTS_PLATFORM_NAME: ${PAYMENTS_PLATFORM_NAME:-OOO M9}
+  PAYMENTS_PLATFORM_PHONE: ${PAYMENTS_PLATFORM_PHONE}
+
 services:
   main:
     image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
