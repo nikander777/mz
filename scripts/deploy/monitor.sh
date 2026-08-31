@@ -3,7 +3,7 @@
 # Добавь в cron: */5 * * * * /opt/muzilla/scripts/deploy/monitor.sh
 #
 # Переменные (задай в .env.deploy или экспортируй):
-#   MONITOR_URL       — URL для проверки (https://mzt.nadev.ru)
+#   MONITOR_URL       — URL для проверки (по умолчанию боевой домен)
 #   TELEGRAM_BOT_TOKEN — токен Telegram бота
 #   TELEGRAM_CHAT_ID   — ID чата для алертов
 set -euo pipefail
@@ -11,7 +11,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 [[ -f "$SCRIPT_DIR/.env.deploy" ]] && source "$SCRIPT_DIR/.env.deploy"
 
-MONITOR_URL="${MONITOR_URL:-https://mzt.nadev.ru}"
+# Домен mzt.nadev.ru отключён — проверки по нему молча уходили в никуда.
+MONITOR_URL="${MONITOR_URL:-https://new.muzilla.ru}"
 STATE_FILE="/tmp/muzilla_monitor_state"
 
 send_telegram() {
