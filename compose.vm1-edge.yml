@@ -104,6 +104,10 @@ x-laravel-env: &laravel-env
   # Без секрета эндпоинт /api/webhook/moneta/merchant закрыт (503).
   MONETA_MERCHANT_WEBHOOK_URL: ${MONETA_MERCHANT_WEBHOOK_URL}
   MONETA_MERCHANT_WEBHOOK_SECRET: ${MONETA_MERCHANT_WEBHOOK_SECRET}
+  # Перепроверка коллбека в НКО вместо подписи: «код проверки целостности
+  # данных» в интерфейсе ЛК2 не находится, и без этого флага онбординг
+  # продавцов был бы закрыт наглухо (эндпоинт отвечает 503).
+  MONETA_MERCHANT_WEBHOOK_VERIFY_VIA_API: ${MONETA_MERCHANT_WEBHOOK_VERIFY_VIA_API:-true}
   MONETA_WEBHOOK_ALLOWED_IPS: ${MONETA_WEBHOOK_ALLOWED_IPS}
   # ЛК1 «ООО М9 ЛК Счета» — счета площадки. Нужен, пока часть заказов
   # доживает на историческом драйвере moneta (order_payments.provider).
