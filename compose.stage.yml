@@ -66,6 +66,11 @@ x-laravel-env: &laravel-env
   MONETA_USE_STUB: ${MONETA_USE_STUB}
   MONETA_WEBHOOK_URL: ${MONETA_WEBHOOK_URL}
   MONETA_MERCHANT_WEBHOOK_URL: ${MONETA_MERCHANT_WEBHOOK_URL}
+  # «Код проверки целостности данных» ЛК2 — им НКО подписывает коллбеки
+  # MerchantAPI. Пусто вне local = /api/webhook/moneta/merchant закрыт 503-м,
+  # и договор продавца никогда не станет ACTIVE автоматически.
+  MONETA_MERCHANT_WEBHOOK_SECRET: ${MONETA_MERCHANT_WEBHOOK_SECRET}
+  MONETA_WEBHOOK_ALLOWED_IPS: ${MONETA_WEBHOOK_ALLOWED_IPS}
   MONETA_SUCCESS_URL: ${MONETA_SUCCESS_URL}
   MONETA_FAIL_URL: ${MONETA_FAIL_URL}
   MONETA_USERNAME: ${MONETA_USERNAME}
@@ -77,6 +82,12 @@ x-laravel-env: &laravel-env
   MONETA_ACCOUNT_PROTOTYPE: ${MONETA_ACCOUNT_PROTOTYPE}
   MONETA_TEST_SBP_PHONE: ${MONETA_TEST_SBP_PHONE}
   MONETA_TEST_SBP_BANK_ID: ${MONETA_TEST_SBP_BANK_ID}
+  # Имена атрибутов профиля НКО для налогового режима и ставки НДС.
+  # Пусто = не отправлять (нераспознанный ключ отбивает весь EditProfile).
+  MONETA_ATTR_TAX_REGIME: ${MONETA_ATTR_TAX_REGIME}
+  MONETA_ATTR_VAT_CODE: ${MONETA_ATTR_VAT_CODE}
+  # Гейт каталога: товары видны только после одобрения анкеты НКО.
+  MZ_REQUIRE_MONETA_APPROVAL: ${MZ_REQUIRE_MONETA_APPROVAL:-true}
   # === Платежи: касса ПА ООО «ПЭЙ ЭНИ ВЭЙ» (54-ФЗ) ===
   # Драйвер НОВЫХ заказов: moneta (историческая схема, чеков нет) | bpa
   # (JSON API с номенклатурой, чек 54-ФЗ пробивает ККТ агрегатора).

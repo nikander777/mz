@@ -84,6 +84,52 @@ x-laravel-env: &laravel-env
   # Базовый URL фронтенда — используется в ссылках внутри email-шаблонов.
   APP_FRONTEND_URL: ${APP_FRONTEND_URL}
 
+  # === НКО МОНЕТА: MerchantAPI, регистрация продавцов ЮЛ/ИП ===
+  # Анкета продавца из ЛК уходит в БОЕВОЙ ЛК2 «ООО М9 ЛК Клиенты»
+  # (unitId=22938995): CreateProfile в группу «Зарегистрированные»,
+  # затем перевод в «Активные» и CreateAccount по счёту-прототипу.
+  # Без этих переменных MerchantAPI падает на «не задан MONETA_UNIT_REGISTERED»,
+  # анкета никуда не уходит, и продавец не проходит гейт каталога
+  # (MZ_REQUIRE_MONETA_APPROVAL) — значения держим в /opt/muzilla/.env.
+  MONETA_API_URL: ${MONETA_API_URL:-https://www.moneta.ru}
+  MONETA_USERNAME: ${MONETA_USERNAME}
+  MONETA_PASSWORD: ${MONETA_PASSWORD}
+  MONETA_UNIT_ROOT: ${MONETA_UNIT_ROOT}
+  MONETA_UNIT_REGISTERED: ${MONETA_UNIT_REGISTERED}
+  MONETA_UNIT_ACTIVE: ${MONETA_UNIT_ACTIVE}
+  MONETA_UNIT_WITHOUT_AGREEMENT: ${MONETA_UNIT_WITHOUT_AGREEMENT}
+  MONETA_ACCOUNT_PROTOTYPE: ${MONETA_ACCOUNT_PROTOTYPE}
+  MONETA_MERCHANT_PAYMENT_PASSWORD: ${MONETA_MERCHANT_PAYMENT_PASSWORD}
+  # Коллбеки НКО об изменении профиля/договора/счетов продавца.
+  # Без секрета эндпоинт /api/webhook/moneta/merchant закрыт (503).
+  MONETA_MERCHANT_WEBHOOK_URL: ${MONETA_MERCHANT_WEBHOOK_URL}
+  MONETA_MERCHANT_WEBHOOK_SECRET: ${MONETA_MERCHANT_WEBHOOK_SECRET}
+  MONETA_WEBHOOK_ALLOWED_IPS: ${MONETA_WEBHOOK_ALLOWED_IPS}
+  # ЛК1 «ООО М9 ЛК Счета» — счета площадки. Нужен, пока часть заказов
+  # доживает на историческом драйвере moneta (order_payments.provider).
+  MONETA_MERCHANT_ID: ${MONETA_MERCHANT_ID}
+  MONETA_API_LOGIN: ${MONETA_API_LOGIN}
+  MONETA_API_KEY: ${MONETA_API_KEY}
+  MONETA_SECRET_KEY: ${MONETA_SECRET_KEY}
+  MONETA_ACCOUNT_ID: ${MONETA_ACCOUNT_ID}
+  MONETA_TRANSIT_ACCOUNT: ${MONETA_TRANSIT_ACCOUNT}
+  MONETA_COMMISSION_ACCOUNT: ${MONETA_COMMISSION_ACCOUNT}
+  MONETA_SECURITY_ACCOUNT: ${MONETA_SECURITY_ACCOUNT}
+  MONETA_PAYMENT_PASSWORD: ${MONETA_PAYMENT_PASSWORD}
+  MONETA_TEST_MODE: ${MONETA_TEST_MODE:-false}
+  MONETA_USE_STUB: ${MONETA_USE_STUB:-false}
+  MONETA_WEBHOOK_URL: ${MONETA_WEBHOOK_URL}
+  MONETA_SUCCESS_URL: ${MONETA_SUCCESS_URL}
+  MONETA_FAIL_URL: ${MONETA_FAIL_URL}
+  # Имена атрибутов профиля НКО для налогового режима и ставки НДС.
+  # Пусто = не отправлять (справочник атрибутов НКО не опубликован,
+  # нераспознанный ключ отбивает весь EditProfile).
+  MONETA_ATTR_TAX_REGIME: ${MONETA_ATTR_TAX_REGIME}
+  MONETA_ATTR_VAT_CODE: ${MONETA_ATTR_VAT_CODE}
+
+  # === Гейт каталога: товары видны только после одобрения анкеты НКО ===
+  MZ_REQUIRE_MONETA_APPROVAL: ${MZ_REQUIRE_MONETA_APPROVAL:-true}
+
   # === Платежи: касса ПА ООО «ПЭЙ ЭНИ ВЭЙ» (54-ФЗ) ===
   # ⚠️ PAYMENTS_DRIVER здесь НАМЕРЕННО без значения по умолчанию `bpa`:
   # переключение включает боевой приём денег и фискализацию. Включать явно
