@@ -84,6 +84,75 @@ x-laravel-env: &laravel-env
   # Базовый URL фронтенда — используется в ссылках внутри email-шаблонов.
   APP_FRONTEND_URL: ${APP_FRONTEND_URL}
 
+
+
+  # === Платежи: касса ПА ООО «ПЭЙ ЭНИ ВЭЙ» (54-ФЗ) ===
+  # На VM-2 эти переменные нужны не меньше, чем на edge: подтверждение холдов
+  # (SettleAuthorizedHolds), сверка операций (ReconcileBpaPayments), возвраты
+  # и разблокировка расчётов с продавцом живут в queue и scheduler. Без ключей
+  # фоновые джобы падают, а деньги зависают в промежуточном состоянии.
+  PAYMENTS_DRIVER: ${PAYMENTS_DRIVER:-moneta}
+  BPA_KEY: ${BPA_KEY}
+  BPA_SECRET: ${BPA_SECRET}
+  BPA_CREDIT_ACCOUNT: ${BPA_CREDIT_ACCOUNT}
+  BPA_DEBIT_ACCOUNT: ${BPA_DEBIT_ACCOUNT}
+  BPA_API_URL: ${BPA_API_URL:-https://bpa.payanyway.ru/api}
+  BPA_ASSISTANT_URL: ${BPA_ASSISTANT_URL:-https://www.payanyway.ru/assistant.htm}
+  BPA_USE_STUB: ${BPA_USE_STUB:-false}
+  BPA_QR_TTL: ${BPA_QR_TTL:-30}
+  BPA_WEBHOOK_SECRET: ${BPA_WEBHOOK_SECRET}
+  BPA_WEBHOOK_ALLOWED_IPS: ${BPA_WEBHOOK_ALLOWED_IPS}
+  BPA_WEBHOOK_VERIFY_VIA_API: ${BPA_WEBHOOK_VERIFY_VIA_API:-true}
+  BPA_ALLOWLIST_BUYER_IDS: ${BPA_ALLOWLIST_BUYER_IDS}
+  BPA_ALLOWLIST_SELLER_IDS: ${BPA_ALLOWLIST_SELLER_IDS}
+  PAYMENTS_PLATFORM_ACCOUNT: ${PAYMENTS_PLATFORM_ACCOUNT}
+  PAYMENTS_PLATFORM_INN: ${PAYMENTS_PLATFORM_INN}
+  PAYMENTS_PLATFORM_NAME: ${PAYMENTS_PLATFORM_NAME:-OOO M9}
+  PAYMENTS_PLATFORM_PHONE: ${PAYMENTS_PLATFORM_PHONE}
+
+  # === Каталог товаров: meili|database (откат — database) ===
+  MZ_CATALOG_DRIVER_PRODUCTS: ${MZ_CATALOG_DRIVER_PRODUCTS:-database}
+
+  # === Доставка ===
+  # Перевозчик по умолчанию (config/delivery.php) — подстановка ПВЗ в новый
+  # лот, дефолт карты на чекауте. Смена значения не отключает Почту России.
+  DELIVERY_DEFAULT_CARRIER: ${DELIVERY_DEFAULT_CARRIER:-cdek}
+  # СДЭК API v2 — ПВЗ на карте, тарифы, заявки, трекинг. Каталог ПВЗ
+  # синхронизируется командой cdek:sync-pickup-points (крон 04:00), карта
+  # читает точки bbox-запросом. Боевые креды и CDEK_SANDBOX=false — в .env
+  # на сервере (в git не коммитятся).
+  CDEK_ACCOUNT: ${CDEK_ACCOUNT}
+  CDEK_SECURE: ${CDEK_SECURE}
+  CDEK_SANDBOX: ${CDEK_SANDBOX:-true}
+  CDEK_BASE_URL: ${CDEK_BASE_URL:-}
+  CDEK_TIMEOUT: ${CDEK_TIMEOUT:-30}
+  CDEK_FORCE_SHIPMENT_POINT: ${CDEK_FORCE_SHIPMENT_POINT:-}
+  # Почта России — расчёт доставки, треки, QR-стикеры.
+  RUSSIAN_POST_TOKEN: ${RUSSIAN_POST_TOKEN}
+  RUSSIAN_POST_KEY: ${RUSSIAN_POST_KEY}
+  RUSSIAN_POST_LOGIN: ${RUSSIAN_POST_LOGIN}
+  RUSSIAN_POST_PASSWORD: ${RUSSIAN_POST_PASSWORD}
+  RUSSIAN_POST_FORCE_OPS_CODE: ${RUSSIAN_POST_FORCE_OPS_CODE}
+
+  # === DaData — подсказки адресов, городов, почтовых отделений ===
+  DADATA_API_KEY: ${DADATA_API_KEY}
+  DADATA_SECRET_KEY: ${DADATA_SECRET_KEY}
+
+  # === VK ID OAuth (id.vk.ru) — server-side OAuth flow ===
+  # Redirect URI должен быть прописан 1-в-1 в кабинете VK ID.
+  VKID_CLIENT_ID: ${VKID_CLIENT_ID}
+  VKID_CLIENT_SECRET: ${VKID_CLIENT_SECRET}
+  VKID_REDIRECT_URI: ${VKID_REDIRECT_URI:-https://new.muzilla.ru/api/auth/vk/callback}
+
+  # === Legacy MySQL — только на время миграции со старого портала ===
+  # Задействован, когда на VM-3 поднят compose.legacy-mysql.yml. Вне миграции
+  # переменные игнорируются (migrate-old:* не вызывается).
+  LEGACY_DB_HOST: ${LEGACY_DB_HOST:-}
+  LEGACY_DB_PORT: ${LEGACY_DB_PORT:-3306}
+  LEGACY_DB_DATABASE: ${LEGACY_DB_DATABASE:-mz}
+  LEGACY_DB_USERNAME: ${LEGACY_DB_USERNAME:-root}
+  LEGACY_DB_PASSWORD: ${LEGACY_DB_PASSWORD:-}
+
 services:
   redis:
     image: redis:7-alpine
@@ -123,13 +192,32 @@ services:
 
   main-queue:
     image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
-    command: php artisan queue:work --tries=3 --timeout=120
+    # Очереди перечислены в порядке приоритета. Тяжёлые медиа-задачи вынесены
+    # в main-queue-media, иначе перенос фото блокирует письма и платежи.
+    command: php artisan queue:work --queue=default,cache-warm --tries=3 --timeout=120
     environment:
       <<: *laravel-env
       APP_KEY: ${MAIN_APP_KEY}
       APP_URL: ${MAIN_APP_URL}
       DB_DATABASE: ${MAIN_DB_DATABASE}
     depends_on: [redis]
+    restart: unless-stopped
+
+  # Медиа-воркер main: перенос фото со старого портала (legacy-photos) и
+  # генерация размерных вариантов (image-processing). Таймаут 900 с — батч
+  # MigrateProductPhotosBatchJob объявляет timeout=600 и качает пачку файлов
+  # с images.muzilla.ru. Две реплики: миграция каталога упирается в сеть.
+  main-queue-media:
+    image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
+    command: php artisan queue:work --queue=legacy-photos,image-processing --tries=3 --timeout=900
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${MAIN_APP_KEY}
+      APP_URL: ${MAIN_APP_URL}
+      DB_DATABASE: ${MAIN_DB_DATABASE}
+    depends_on: [redis]
+    deploy:
+      replicas: ${MAIN_MEDIA_WORKERS:-2}
     restart: unless-stopped
 
   main-scheduler:

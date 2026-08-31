@@ -115,6 +115,53 @@ x-laravel-env: &laravel-env
   PAYMENTS_PLATFORM_NAME: ${PAYMENTS_PLATFORM_NAME:-OOO M9}
   PAYMENTS_PLATFORM_PHONE: ${PAYMENTS_PLATFORM_PHONE}
 
+
+  # === Каталог товаров: meili|database (откат — database) ===
+  MZ_CATALOG_DRIVER_PRODUCTS: ${MZ_CATALOG_DRIVER_PRODUCTS:-database}
+  # Раздел Hi-Fi (config/features.php). Выключен на старте: логистика под
+  # крупногабаритные товары не готова. Парный флаг фронта — у сервиса nuxt.
+  MZ_FEATURE_HIFI: ${MZ_FEATURE_HIFI:-false}
+
+  # === Доставка ===
+  # Перевозчик по умолчанию (config/delivery.php) — подстановка ПВЗ в новый
+  # лот, дефолт карты на чекауте. Смена значения не отключает Почту России.
+  DELIVERY_DEFAULT_CARRIER: ${DELIVERY_DEFAULT_CARRIER:-cdek}
+  # СДЭК API v2 — ПВЗ на карте, тарифы, заявки, трекинг. Каталог ПВЗ
+  # синхронизируется командой cdek:sync-pickup-points (крон 04:00), карта
+  # читает точки bbox-запросом. Боевые креды и CDEK_SANDBOX=false — в .env
+  # на сервере (в git не коммитятся).
+  CDEK_ACCOUNT: ${CDEK_ACCOUNT}
+  CDEK_SECURE: ${CDEK_SECURE}
+  CDEK_SANDBOX: ${CDEK_SANDBOX:-true}
+  CDEK_BASE_URL: ${CDEK_BASE_URL:-}
+  CDEK_TIMEOUT: ${CDEK_TIMEOUT:-30}
+  CDEK_FORCE_SHIPMENT_POINT: ${CDEK_FORCE_SHIPMENT_POINT:-}
+  # Почта России — расчёт доставки, треки, QR-стикеры.
+  RUSSIAN_POST_TOKEN: ${RUSSIAN_POST_TOKEN}
+  RUSSIAN_POST_KEY: ${RUSSIAN_POST_KEY}
+  RUSSIAN_POST_LOGIN: ${RUSSIAN_POST_LOGIN}
+  RUSSIAN_POST_PASSWORD: ${RUSSIAN_POST_PASSWORD}
+  RUSSIAN_POST_FORCE_OPS_CODE: ${RUSSIAN_POST_FORCE_OPS_CODE}
+
+  # === DaData — подсказки адресов, городов, почтовых отделений ===
+  DADATA_API_KEY: ${DADATA_API_KEY}
+  DADATA_SECRET_KEY: ${DADATA_SECRET_KEY}
+
+  # === VK ID OAuth (id.vk.ru) — server-side OAuth flow ===
+  # Redirect URI должен быть прописан 1-в-1 в кабинете VK ID.
+  VKID_CLIENT_ID: ${VKID_CLIENT_ID}
+  VKID_CLIENT_SECRET: ${VKID_CLIENT_SECRET}
+  VKID_REDIRECT_URI: ${VKID_REDIRECT_URI:-https://new.muzilla.ru/api/auth/vk/callback}
+
+  # === Legacy MySQL — только на время миграции со старого портала ===
+  # Задействован, когда на VM-3 поднят compose.legacy-mysql.yml. Вне миграции
+  # переменные игнорируются (migrate-old:* не вызывается).
+  LEGACY_DB_HOST: ${LEGACY_DB_HOST:-}
+  LEGACY_DB_PORT: ${LEGACY_DB_PORT:-3306}
+  LEGACY_DB_DATABASE: ${LEGACY_DB_DATABASE:-mz}
+  LEGACY_DB_USERNAME: ${LEGACY_DB_USERNAME:-root}
+  LEGACY_DB_PASSWORD: ${LEGACY_DB_PASSWORD:-}
+
 services:
   main:
     image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
