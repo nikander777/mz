@@ -110,6 +110,13 @@ x-laravel-env: &laravel-env
   PAYMENTS_PLATFORM_NAME: ${PAYMENTS_PLATFORM_NAME:-OOO M9}
   PAYMENTS_PLATFORM_PHONE: ${PAYMENTS_PLATFORM_PHONE}
 
+  # HTTP-прокси main → discogs (карточка релиза, денормализация данных релиза
+  # в товар, уведомления вишлиста). На VM-1 это внутренний http://discogs-web,
+  # но здесь такого контейнера нет — ходим через публичный домен. Без значения
+  # config services.discogs.api_url падает в дефолт http://localhost:8001, и
+  # каждая фоновая задача, которой нужен релиз, тихо получает «не найдено».
+  DISCOGS_API_URL: ${DISCOGS_API_URL:-https://${PUBLIC_HOST}}
+
   # === Каталог товаров: meili|database (откат — database) ===
   MZ_CATALOG_DRIVER_PRODUCTS: ${MZ_CATALOG_DRIVER_PRODUCTS:-database}
 
