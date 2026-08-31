@@ -20,6 +20,11 @@ x-laravel-env: &laravel-env
   REDIS_PASSWORD: ${REDIS_PASSWORD}
   CACHE_STORE: redis
   SESSION_DRIVER: redis
+  # Время жизни сессии, минуты. Дефолт Laravel — 120 (2 часа): для маркетплейса
+  # это значит разлогин между заходами. Сессии лежат в Redis с TTL по этому
+  # значению, поэтому его рост увеличивает и объём ключей сессий.
+  SESSION_LIFETIME: ${SESSION_LIFETIME:-120}
+  SESSION_EXPIRE_ON_CLOSE: ${SESSION_EXPIRE_ON_CLOSE:-false}
   QUEUE_CONNECTION: redis
   BROADCAST_CONNECTION: reverb
   SCOUT_DRIVER: meilisearch
