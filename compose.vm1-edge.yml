@@ -300,6 +300,14 @@ services:
       # поэтому Nitro шлёт неверный Bearer → 401. Override через NUXT_*.
       NUXT_API_TOKEN: ${DISCOGS_API_TOKEN}
       NUXT_API_BASE_URL: http://discogs-web
+      # Node — один поток на процесс: SSR каталога и дискографии упирается в
+      # ядро задолго до памяти. Держим несколько реплик (edge балансирует их
+      # перерезолвом имени nuxt через встроенный DNS Docker) и подрезаем heap:
+      # с дефолтными ~2 ГБ процесс перед смертью полчаса молотит GC и отдаёт
+      # 502, с лимитом — быстро падает и перезапускается.
+      NODE_OPTIONS: ${NUXT_NODE_OPTIONS:---max-old-space-size=1024}
+    deploy:
+      replicas: ${NUXT_REPLICAS:-3}
     restart: unless-stopped
 
   edge:
