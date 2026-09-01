@@ -130,11 +130,16 @@ grep -E '^(MAIN_APP_URL|DISCOGS_APP_URL|REVERB_HOST|NUXT_BACKEND_BASE_URL|SANCTU
 REMOTE
 }
 
+# Caddyfile в два приёма — тем же порядком, что у сторожа:
+#   interim — оба домена ОБСЛУЖИВАЮТ (клиентский бандл ещё ходит на старый);
+#   final   — старое имя редиректит, кроме вебхуков.
+# Между ними ждём сертификат: пока его нет, ничего необратимого не сделано.
 patch_caddy() {
-    info "VM-1: Caddyfile (бэкап /etc/caddy/Caddyfile.bak-$STAMP)"
+    local mode="$1"
+    info "VM-1: Caddyfile ($mode)"
     ssh_cmd "$VM1_HOST" bash -s <<REMOTE
 set -e
-cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$STAMP
+[[ -f /etc/caddy/Caddyfile.bak-$STAMP ]] || cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak-$STAMP
 cat > /etc/caddy/Caddyfile <<'CADDY'
 $NEW_DOMAIN {
     reverse_proxy 127.0.0.1:8080 {
@@ -143,13 +148,23 @@ $NEW_DOMAIN {
     }
     encode gzip
 }
+CADDY
+if [[ "$mode" == "interim" ]]; then
+cat >> /etc/caddy/Caddyfile <<'CADDY'
 
-# www и старое имя — постоянный редирект на боевой домен.
-#
-# Исключение — вебхуки платёжных систем: БПА и НКО МОНЕТА шлют POST и за 301
-# не идут, а адрес уведомления прописан у них в кабинете на старом домене.
-# Пока адреса там не обновлены, эти пути проксируем как есть — иначе
-# уведомления об оплате молча теряются.
+www.$NEW_DOMAIN, $OLD_DOMAIN {
+    reverse_proxy 127.0.0.1:8080 {
+        header_up X-Real-IP {remote_host}
+        header_up Host {host}
+    }
+    encode gzip
+}
+CADDY
+else
+# Вебхуки БПА/НКО прописаны в кабинетах на старом домене, а POST за 301 не
+# идёт — тело потеряется. Их проксируем, остальное редиректим.
+cat >> /etc/caddy/Caddyfile <<'CADDY'
+
 www.$NEW_DOMAIN, $OLD_DOMAIN {
     handle /api/webhook/* {
         reverse_proxy 127.0.0.1:8080 {
@@ -162,8 +177,32 @@ www.$NEW_DOMAIN, $OLD_DOMAIN {
     }
 }
 CADDY
-caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+fi
+caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
 systemctl reload caddy
+echo "Caddyfile: $mode, reload ok"
+REMOTE
+}
+
+restore_caddy() {
+    warn "VM-1: возвращаю прежний Caddyfile"
+    ssh_cmd "$VM1_HOST" "cp /etc/caddy/Caddyfile.bak-$STAMP /etc/caddy/Caddyfile && systemctl reload caddy && echo восстановлен"
+}
+
+# Сертификат Let's Encrypt на новый домен. Резолвим принудительно в себя:
+# локальный кеш VM-1 может ещё держать старый IP.
+wait_cert() {
+    info "Жду сертификат на $NEW_DOMAIN (до 200 с)"
+    ssh_cmd "$VM1_HOST" bash -s <<REMOTE
+for i in \$(seq 1 40); do
+    if curl -sf --max-time 5 --resolve "$NEW_DOMAIN:443:127.0.0.1" "https://$NEW_DOMAIN/health" | grep -q '^ok\$'; then
+        echo "сертификат получен на попытке \$i"
+        exit 0
+    fi
+    sleep 5
+done
+echo "сертификат не поднялся"
+exit 1
 REMOTE
 }
 
@@ -299,10 +338,16 @@ case "${1:---check}" in
         ;;
     --apply)
         check_dns || { error "DNS не готов, прерываюсь"; exit 1; }
+        patch_caddy interim
+        if ! wait_cert; then
+            error "Сертификат на $NEW_DOMAIN не выпустился — откат, прод не тронут"
+            restore_caddy
+            exit 1
+        fi
         patch_env "$VM1_HOST" "VM-1"
         patch_env "$VM2_HOST" "VM-2"
-        patch_caddy
         recreate
+        patch_caddy final
         patch_monitor
         echo ""
         info "Жду 20 с, пока поднимется Nuxt SSR..."
