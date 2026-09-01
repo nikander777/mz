@@ -3,7 +3,7 @@
 # Использование:
 #   bash health-check.sh                # проверить через SSH
 #   bash health-check.sh --local        # проверить локально (запускать на VM-1)
-#   bash health-check.sh --url https://mzt.nadev.ru  # проверить по URL
+#   bash health-check.sh --url https://muzilla.ru   # проверить по URL
 set -euo pipefail
 
 RED='\033[0;31m'
@@ -45,7 +45,7 @@ check_url() {
 
 case "${1:---ssh}" in
     --url)
-        BASE_URL="${2:?Укажи URL: --url https://mzt.nadev.ru}"
+        BASE_URL="${2:?Укажи URL: --url https://muzilla.ru}"
         echo ""
         echo "Проверяю $BASE_URL..."
         check_url "$BASE_URL/" "Nuxt SSR (главная)"

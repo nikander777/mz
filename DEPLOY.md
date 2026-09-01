@@ -28,12 +28,15 @@ Single source of truth по продакшен-инфраструктуре MUZI
 
 | Домен | Указывает на | Назначение |
 |-------|--------------|------------|
-| `new.muzilla.ru` | VM-1 (`90.156.211.143`) | **Прод** (Caddy → edge nginx :8080) |
+| `muzilla.ru` | VM-1 (`90.156.211.143`) | **Прод** (Caddy → edge nginx :8080) |
+| `www.muzilla.ru` | VM-1 | 301 на `muzilla.ru` |
+| `new.muzilla.ru` | VM-1 | 301 на `muzilla.ru`; `/api/webhook/*` проксируется |
 | `dev.muzilla.ru` | Stage VM (`194.87.86.90`) | **Stage** (single-host, отдельный VPS) |
 
 Caddyfile на VM-1: `/etc/caddy/Caddyfile` — `reverse_proxy 127.0.0.1:8080`. SSL от
-Let's Encrypt, обновляется автоматически. Старые домены `prod.nadev.ru` (prod) и
-`mzt.nadev.ru` (stage) сняты после миграции 5 мая 2026 — не используем.
+Let's Encrypt, обновляется автоматически. Эталон — `scripts/provision/Caddyfile`.
+Старые домены `prod.nadev.ru` (prod) и `mzt.nadev.ru` (stage) сняты после миграции
+5 мая 2026 — не используем.
 
 ### SSH
 
@@ -250,7 +253,7 @@ docker compose -f compose.vm1-edge.yml up -d
 ### Health-check
 
 ```bash
-bash scripts/deploy/health-check.sh --url https://new.muzilla.ru
+bash scripts/deploy/health-check.sh --url https://muzilla.ru
 # Проверяет:
 #   /            → 200 (Nuxt SSR)
 #   /health      → 200 (edge nginx)
@@ -645,6 +648,54 @@ make health
 Сделана в апреле 2026. Тогда VM-3 поднималась на VPS, потом данные перенесены
 `pg_dumpall | psql` на dedicated E-2388G, `VM3_HOST` обновлён в `.env` всех VM.
 
+### Переезд на основной домен muzilla.ru (сентябрь 2026)
+
+Прод переехал с `new.muzilla.ru` на `muzilla.ru` (до этого на `muzilla.ru` жил
+старый портал `45.86.39.44`). Переключение — скриптом:
+
+```bash
+bash scripts/deploy/switch-domain.sh --check     # DNS готов?
+bash scripts/deploy/switch-domain.sh --apply     # переключить
+bash scripts/deploy/switch-domain.sh --rollback  # вернуть как было
+```
+
+**Порядок обязателен: сначала DNS, потом `--apply`.** Публичный адрес API зашит
+в клиентский бандл Nuxt (`NUXT_PUBLIC_API_URL`). Если поменять env раньше DNS,
+браузер начнёт ходить за `/api/*` на `https://muzilla.ru`, который ещё резолвится
+в старый портал, и прод ляжет. Обратный порядок (DNS раньше env) безопасен: Caddy
+получит сертификат на новый домен в момент `--apply`.
+
+Что делает `--apply`:
+
+1. `/opt/muzilla/.env` на VM-1 и VM-2 (бэкап `.env.bak-domain-<ts>`):
+   `MAIN_APP_URL`, `DISCOGS_APP_URL`, `REVERB_HOST`, `NUXT_BACKEND_BASE_URL`,
+   `SANCTUM_STATEFUL_DOMAINS`, `SESSION_DOMAIN`, `PUBLIC_HOST`, `APP_FRONTEND_URL`,
+   `VKID_REDIRECT_URI`, `MONETA_*_URL`.
+2. `/etc/caddy/Caddyfile`: `muzilla.ru` обслуживает, `www.` и `new.` — 301.
+3. `docker compose up -d --force-recreate` на VM-1 (nuxt, main, main-web, discogs,
+   discogs-web, edge) и VM-2 (reverb, queue'и, scheduler'ы).
+4. `php artisan optimize:clear` в main и discogs — иначе `bootstrap/cache/config.php`
+   держит старый домен и `/sanctum/csrf-cookie` падает 500.
+5. `MONITOR_URL` в `/opt/muzilla/scripts/deploy/.env.deploy`.
+
+**Вебхуки платёжных систем.** Адрес уведомления прописан в кабинетах БПА и НКО на
+старом домене, а POST за 301 не идёт — тело потеряется. Поэтому на `new.muzilla.ru`
+путь `/api/webhook/*` не редиректится, а проксируется в приложение. Блок снимается
+из Caddyfile после того, как адреса обновлены в кабинетах.
+
+**Что меняется руками, снаружи:**
+
+| Где | Что |
+|-----|-----|
+| VK ID (`id.vk.ru`, app 54493027) | redirect URI `https://muzilla.ru/api/auth/vk/callback` — добавить ДО переключения, VK допускает несколько |
+| БПА ПэйЭниВей (`mp@payanyway.ru`) | адрес уведомлений → `https://muzilla.ru/api/webhook/bpa/<secret>` |
+| НКО МОНЕТА, ЛК2 | адрес коллбека → `https://muzilla.ru/api/webhook/moneta/merchant` |
+| Яндекс.Метрика 94890841, Top.Mail.Ru 3580068 | адрес сайта (фильтр по хосту в `nuxt.config.ts` уже знает `muzilla.ru`) |
+| Яндекс.Вебмастер, Search Console | переезд сайта / главное зеркало |
+
+**Разлогин.** `SESSION_DOMAIN` меняется с `new.muzilla.ru` на `muzilla.ru`: старая
+cookie к новому хосту не подойдёт, залогиненные разлогинятся один раз.
+
 ### Переход доменов на muzilla.ru (5 мая 2026)
 
 Совершён ровно так:
@@ -803,7 +854,7 @@ ssh root@92.255.105.112 'cd /opt/muzilla && \
 ssh root@90.156.211.143 'sed -i "/^LEGACY_DB_/d" /opt/muzilla/.env'
 
 # 9. Проверка
-bash scripts/deploy/health-check.sh --url https://new.muzilla.ru
+bash scripts/deploy/health-check.sh --url https://muzilla.ru
 ssh root@90.156.211.143 'cd /opt/muzilla && \
   docker compose -f compose.vm1-edge.yml exec -T main php artisan migrate-old:stats'
 ```

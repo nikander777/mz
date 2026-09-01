@@ -1,0 +1,46 @@
+# Короткоживущий MySQL-контейнер для миграции legacy-данных со старого Yii2-портала.
+# Поднимается на VM-3 рядом с compose.vm3-data.yml только на время миграции.
+#
+# Запуск:
+#   1. Положить дамп в /opt/muzilla/legacy/mz-legacy.sql.gz
+#   2. cd /opt/muzilla && docker compose -f compose.legacy-mysql.yml up -d
+#   3. docker compose -f compose.legacy-mysql.yml exec -T legacy-mysql \
+#         bash -c 'gunzip -c /dump/mz-legacy.sql.gz | mysql -uroot -p$MYSQL_ROOT_PASSWORD mz'
+#   4. На VM-1 в /opt/muzilla/.env прописать LEGACY_DB_HOST=<VM3_HOST>, LEGACY_DB_PORT=33060
+#   5. На VM-3 открыть UFW: ufw allow from <VM1_HOST> to any port 33060
+#   6. На VM-1: docker compose -f compose.vm1-edge.yml exec -T main php artisan migrate-old:all
+#
+# После завершения миграции (ОБЯЗАТЕЛЬНО):
+#   docker compose -f compose.legacy-mysql.yml down -v
+#   ufw delete allow from <VM1_HOST> to any port 33060
+#   rm /opt/muzilla/legacy/mz-legacy.sql.gz
+#
+# Контейнер слушает 33060 наружу (нужен VM-1 для миграции). UFW whitelist по VM-1 IP — критичен.
+
+name: muzilla-legacy
+
+services:
+  legacy-mysql:
+    image: mysql:8.0
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --max-allowed-packet=512M
+      --innodb-buffer-pool-size=4G
+    environment:
+      MYSQL_ROOT_PASSWORD: ${LEGACY_MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${LEGACY_MYSQL_DATABASE:-mz}
+    ports:
+      # Открыто наружу — миграция идёт с VM-1. Защита через UFW (whitelist VM1_HOST).
+      - "33060:3306"
+    volumes:
+      - legacy_mysql_data:/var/lib/mysql
+      - ./legacy:/dump:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-p${LEGACY_MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: "no"
+
+volumes:
+  legacy_mysql_data:

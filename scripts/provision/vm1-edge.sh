@@ -12,7 +12,7 @@ echo ""
 
 # Сбор параметров
 SSH_PORT=$(ask "SSH-порт (по умолчанию 22, рекомендуется сменить)" "22")
-DOMAIN=$(ask "Домен сайта" "mzt.nadev.ru")
+DOMAIN=$(ask "Домен сайта" "muzilla.ru")
 # IP VM-2/VM-3 здесь не нужны — VM-1 ходит к ним исходящими (default allow outgoing).
 # Конкретные IP задаются в /opt/muzilla/.env (VM2_HOST/VM3_HOST).
 
@@ -54,9 +54,13 @@ cat > /etc/caddy/Caddyfile <<EOF
 $DOMAIN {
     reverse_proxy 127.0.0.1:8080 {
         header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
+        header_up Host {host}
     }
+    encode gzip
+}
+
+www.$DOMAIN {
+    redir https://$DOMAIN{uri} permanent
 }
 EOF
 systemctl enable caddy

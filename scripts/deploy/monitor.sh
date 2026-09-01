@@ -11,8 +11,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 [[ -f "$SCRIPT_DIR/.env.deploy" ]] && source "$SCRIPT_DIR/.env.deploy"
 
-# Домен mzt.nadev.ru отключён — проверки по нему молча уходили в никуда.
-MONITOR_URL="${MONITOR_URL:-https://new.muzilla.ru}"
+# Домен берём боевой: проверки по снятому домену молча уходят в никуда
+# (так авария 16.06.2026 два месяца оставалась незамеченной).
+MONITOR_URL="${MONITOR_URL:-https://muzilla.ru}"
 STATE_FILE="/tmp/muzilla_monitor_state"
 
 send_telegram() {

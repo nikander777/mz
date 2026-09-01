@@ -206,7 +206,7 @@ x-laravel-env: &laravel-env
   # Redirect URI должен быть прописан 1-в-1 в кабинете VK ID.
   VKID_CLIENT_ID: ${VKID_CLIENT_ID}
   VKID_CLIENT_SECRET: ${VKID_CLIENT_SECRET}
-  VKID_REDIRECT_URI: ${VKID_REDIRECT_URI:-https://new.muzilla.ru/api/auth/vk/callback}
+  VKID_REDIRECT_URI: ${VKID_REDIRECT_URI:-https://muzilla.ru/api/auth/vk/callback}
 
   # === Legacy MySQL — только на время миграции со старого портала ===
   # Задействован, когда на VM-3 поднят compose.legacy-mysql.yml. Вне миграции

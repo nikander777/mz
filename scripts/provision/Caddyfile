@@ -1,11 +1,33 @@
 # Caddyfile для MUZILLA — VM-1 (Edge).
-# Caddy автоматически получает SSL-сертификат от Let's Encrypt.
-# Замени DOMAIN на свой домен (mzt.nadev.ru или new.muzilla.ru).
+# Caddy сам получает и продлевает SSL-сертификаты Let's Encrypt.
+#
+# Боевой домен — muzilla.ru (переезд с new.muzilla.ru, сентябрь 2026).
+# DOMAIN/LEGACY_DOMAIN можно переопределить через окружение systemd-юнита;
+# для stage и одноразовых стендов достаточно первого блока.
 
-{$DOMAIN:mzt.nadev.ru} {
+{$DOMAIN:muzilla.ru} {
     reverse_proxy 127.0.0.1:8080 {
         header_up X-Real-IP {remote_host}
-        header_up X-Forwarded-For {remote_host}
-        header_up X-Forwarded-Proto {scheme}
+        header_up Host {host}
+    }
+    encode gzip
+}
+
+# www и старое имя new.muzilla.ru — постоянный редирект на боевой домен.
+#
+# Исключение — вебхуки платёжных систем: агрегатор БПА и НКО МОНЕТА шлют
+# POST и за 301 не идут (тело запроса теряется), а адрес уведомления прописан
+# у них в кабинете на старом домене. Пока адреса там не обновлены, эти пути
+# проксируем как есть — иначе уведомления об оплате молча исчезают.
+# После обновления адресов в кабинетах блок handle /api/webhook/* можно снять.
+www.{$DOMAIN:muzilla.ru}, {$LEGACY_DOMAIN:new.muzilla.ru} {
+    handle /api/webhook/* {
+        reverse_proxy 127.0.0.1:8080 {
+            header_up X-Real-IP {remote_host}
+            header_up Host {host}
+        }
+    }
+    handle {
+        redir https://{$DOMAIN:muzilla.ru}{uri} permanent
     }
 }

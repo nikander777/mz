@@ -2,7 +2,7 @@ name: Deploy 3-VM prod
 
 # Только ручной запуск через UI (Actions → Run workflow). Никакого
 # auto-deploy на prod от push'а в сервисный репо. Сначала проверяем на
-# stage (https://mzt.nadev.ru), потом руками катим на prod.
+# stage (https://dev.muzilla.ru), потом руками катим на prod.
 #
 # Использует отдельные secrets PROD_VM*_HOST + PROD_SSH_PRIVATE_KEY,
 # чтобы случайно не задеть stage-VPS.

@@ -46,7 +46,7 @@
 
 ## Деплой и перезапуск
 
-> DevOps-инфраструктура: прод — `new.muzilla.ru`, стейдж — `dev.muzilla.ru`. Контейнеры Docker Compose.
+> DevOps-инфраструктура: прод — `muzilla.ru`, стейдж — `dev.muzilla.ru`. Контейнеры Docker Compose.
 
 - **Стейдж:** автодеплой при push в `master` (CI собирает образ → триггерит pull+up+migrate на VM, ~7 мин). Ручной `make deploy` параллельно даёт конфликт имён контейнеров.
 - **Прод:** локальный `scripts/deploy/deploy.sh --vm1` или кнопка «Deploy 3-VM prod» в GitHub Actions (нужен GHCR-логин PAT'ом).

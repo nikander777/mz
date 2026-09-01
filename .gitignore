@@ -94,4 +94,11 @@ dist
 .vuepress/dist
 
 # Serverless directories
-.serverlessscripts/deploy/.env.deploy
+.serverless
+
+# Конфиг ручного прод-деплоя с локалки — хосты и SSH-параметры
+scripts/deploy/.env.deploy
+
+# Локальные разрешения Claude Code — у каждого свои
+.claude/settings.local.json
+

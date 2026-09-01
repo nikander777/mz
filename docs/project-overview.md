@@ -90,7 +90,7 @@ Realtime-события идут через Reverb (WebSocket).
 ### Окружения
 | Окружение | Домен |
 |-----------|-------|
-| Production | `new.muzilla.ru` |
+| Production | `muzilla.ru` |
 | Staging | `dev.muzilla.ru` |
 
 ---

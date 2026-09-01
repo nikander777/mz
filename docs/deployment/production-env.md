@@ -1,12 +1,16 @@
 # Настройки .env для продакшена
 
+> Историческая справка по cookie-аутентификации. Актуальный полный список
+> переменных боевой среды — `.env.prod.example` и `DEPLOY.md`; прод давно
+> живёт в Docker Compose, а не на системном php-fpm/nginx.
+
 ## Основные настройки приложения
 ```bash
 APP_NAME=MUZILLA
 APP_ENV=production
 APP_DEBUG=false
 APP_KEY=ваш_ключ_здесь
-APP_URL=https://mz.nadev.ru
+APP_URL=https://muzilla.ru
 ```
 
 ## Настройки сессий (КРИТИЧЕСКИ ВАЖНО!)
@@ -15,7 +19,7 @@ SESSION_DRIVER=database
 SESSION_LIFETIME=120
 SESSION_ENCRYPT=false
 SESSION_PATH=/
-SESSION_DOMAIN=mz.nadev.ru
+SESSION_DOMAIN=muzilla.ru
 SESSION_SECURE_COOKIE=true
 SESSION_HTTP_ONLY=true
 SESSION_SAME_SITE=lax
@@ -23,15 +27,15 @@ SESSION_SAME_SITE=lax
 
 ## Настройки Sanctum (КРИТИЧЕСКИ ВАЖНО!)
 ```bash
-SANCTUM_STATEFUL_DOMAINS=mz.nadev.ru,main.nadev.ru,nuxt.nadev.ru
+SANCTUM_STATEFUL_DOMAINS=muzilla.ru,www.muzilla.ru
 SANCTUM_GUARD=web
 ```
 
 ## Настройки CORS
 ```bash
 # Эти переменные должны быть установлены для CORS
-FRONTEND_URL=https://mz.nadev.ru
-NUXT_URL=https://nuxt.nadev.ru
+FRONTEND_URL=https://muzilla.ru
+NUXT_URL=https://muzilla.ru
 ```
 
 ## После изменения .env на продакшене выполните:
@@ -48,11 +52,11 @@ sudo systemctl reload nginx
 
 ## Проверьте диагностику:
 ```bash
-curl https://mz.nadev.ru/debug-csrf
+curl https://muzilla.ru/debug-csrf
 ```
 
 Должно показать:
-- session_domain: "mz.nadev.ru"
+- session_domain: "muzilla.ru"
 - session_secure: true
-- sanctum_stateful_domains содержит "mz.nadev.ru"
+- sanctum_stateful_domains содержит "muzilla.ru"
 - has_session_table: true
