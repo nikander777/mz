@@ -70,18 +70,25 @@ flowchart TD
 
 ## Создание заказов: `CheckoutService`
 
-`app/Services/Order/CheckoutService.php`, ключевой метод `createMultipleOrders($buyer, $ordersData, $customerData, $deliveryData)`:
+`app/Services/Order/CheckoutService.php`, единственный метод, создающий заказы, — `createMultipleOrders($buyer, $ordersData, $customerData, $deliveryData)`:
 
-1. `generatePaymentBatchId()` → `BATCH-YYYYMMDD-HHMMSS-XXXXX` на всю группу.
-2. Для каждого продавца создаётся отдельный `Order`:
-   - `subtotal = Σ(price × qty)`, `delivery_cost` из `deliveryData[seller_id]`, `fee_amount = Order::calculatePlatformFee(subtotal)`, `total_amount`.
+1. `resolveBatchDriver()` — драйвер платежа батча по участникам сделки (`PaymentProviderManager::forParticipants`, роллаут по allowlist покупателей/продавцов): `bpa` (касса агрегатора, чек 54-ФЗ) или `moneta` (историческая схема). Батч попадает в схему целиком.
+2. `resolveSellerOrder()` для каждого продавца — серверная проверка: цена из БД, доставка из `DeliveryService`, принадлежность товара продавцу, `canSell()`. При драйвере `bpa` дополнительно фискальный гейт `SellerFiscalReadiness` (счёт в НКО, ИНН, название, телефон) → issue `seller_not_fiscal_ready`. Любая проблема → `CheckoutValidationException` → `422` + `issues`, заказы не создаются. Тот же разбор использует `previewOrders()` (`POST /api/orders/checkout/preview`), поэтому экран подтверждения и созданный заказ не расходятся.
+3. `generatePaymentBatchId()` → `BATCH-YYYYMMDD-HHMMSS-XXXXX` на всю группу.
+4. `pricing_model = PaymentProviderManager::pricingModelFor(driver)` (`bpa_v2` / `legacy_flat10`) фиксируется на заказе и больше не меняется: от неё зависят комиссия, база выплаты и драйвер оплаты (`forNewBatch` читает её с заказа).
+5. Для каждого продавца создаётся отдельный `Order`:
+   - `subtotal = Σ(price × qty)`, `delivery_cost` серверная, `fee_amount = Order::calculatePlatformFeeFor(subtotal, pricing_model)` (в `bpa_v2` — по карточной ставке как максимальной, уточняется при инициации платежа), `total_amount`.
    - `customer_name/phone/email`, `delivery_service`, `payment_batch_id`, `source='platform'`, статусы `PENDING`.
-   - `OrderItem` с `product_snapshot`, резерв склада (`decreaseStock`).
+   - `OrderItem` с `product_snapshot`, атомарный резерв склада (`decreaseStockAtomically`).
    - `OrderAddress` (ПВЗ: `pickup_point_id/name/data`, извлечение `postal_code`; или курьер: `city`, `address_line1`).
-   - `OrderShipment` (`carrier`, `delivery_method`, `cost`, `weight = 500г × qty`).
+   - `OrderShipment` (`carrier`, `delivery_method`, `cost`, `weight` по весу позиций).
    - запись `OrderStatusHistory` (создан).
-3. Уведомления `OrderCreatedForBuyer` / `OrderCreatedForSeller`.
-4. Возврат `{ orders, payment_batch_id }` → фронт инициирует [оплату](/processes/payments-moneta).
+6. Уведомления `OrderCreatedForBuyer` / `OrderCreatedForSeller`.
+7. Возврат `{ orders, payment_batch_id, notices }` → фронт инициирует [оплату](/processes/payments-moneta).
+
+::: warning Один путь создания заказов
+Второго пути быть не должно. До 05.09.2026 рядом жил дубль `createOrdersFromCart()`: выбор драйвера и фискальный гейт были встроены только в него, контроллер его не звал, и заказы получали легаси-модель денег — на проде оплата уходила в историческую схему МОНЕТЫ (ЛК1 без пароля) вместо кассы агрегатора. Дубль удалён; тесты чекаута обязаны ходить через `createMultipleOrders` или `POST /api/orders/checkout`.
+:::
 
 ## Доставка на этапе оформления: `DeliveryService`
 
@@ -112,6 +119,7 @@ flowchart TD
 | Пустой выбор при переходе к оплате | guard `hasSelectedItems` + редирект | автоматически (фронт) |
 | ПВЗ без индекса | `postal_code` резолвится из `pickup_point_data` / id `rp-XXXXX` | автоматически (`CheckoutService`) |
 | Расчёт перевозчика недоступен | fallback на stub-данные (кроме реального API Почты) | автоматически |
+| Продавец без фискальных реквизитов при включённой кассе (`bpa`) | `422` + issue `seller_not_fiscal_ready`, заказ не создан; в логе `Checkout: продавец не готов к фискализации` с перечнем `missing` | продавец / админ (реквизиты в НКО) |
 
 ## Как тестировать
 
