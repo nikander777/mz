@@ -104,6 +104,7 @@ x-laravel-env: &laravel-env
   MONETA_UNIT_ACTIVE: ${MONETA_UNIT_ACTIVE}
   MONETA_UNIT_WITHOUT_AGREEMENT: ${MONETA_UNIT_WITHOUT_AGREEMENT}
   MONETA_ACCOUNT_PROTOTYPE: ${MONETA_ACCOUNT_PROTOTYPE}
+  MONETA_ACCOUNT_SUBTYPE: ${MONETA_ACCOUNT_SUBTYPE}
   MONETA_MERCHANT_PAYMENT_PASSWORD: ${MONETA_MERCHANT_PAYMENT_PASSWORD}
   # Коллбеки НКО об изменении профиля/договора/счетов продавца.
   # Без секрета эндпоинт /api/webhook/moneta/merchant закрыт (503).

@@ -224,12 +224,20 @@ accept-conditions (CONDITIONS_CORRECT_DATA=Y) ──▶ МОНЕТА
 ```
 НКО проверяет → МОНЕТА ──webhook EDIT_CONTRACT (status=ACTIVE)──▶ MonetaMerchantWebhookController
    → seller_profiles.moneta_contract_status = active
-   → Платформа ──createAccount(unitId)──▶ МОНЕТА ◀── accountId
+   → Платформа ──createAccount(unitId, type=2, subTypeId=50)──▶ МОНЕТА ◀── accountId
    → seller_profiles.moneta_account_id = accountId
    → статус active  ✅ можно получать выплаты
 ```
 
 `ReconcileMonetaContractsJob` периодически досинхронизирует статусы, если webhook потерялся.
+
+> ⚠️ **Счёт получателя = «40821» (05.09.2026).** В схеме кассы ПА деньги продавцу переводятся
+> на счёт, который юридически принадлежит агенту, — в MerchantAPI это расширенный счёт
+> (`type=2`) с подтипом **50 «Агентский»** (`subTypeId`). Обычный расширенный счёт без подтипа
+> НКО как получателя не приняла («необходимо создать счёт 40821»). Подтип задаётся через
+> `MONETA_ACCOUNT_SUBTYPE=50` (прод); на demo, где подтип не включён, переменная пустая.
+> У ООО «М9» (unit 23103583) рабочий счёт — 78341566, он же `PAYMENTS_PLATFORM_ACCOUNT`
+> для строки доставки; 81090786 создан без подтипа и подлежит закрытию НКО.
 
 > ⚠️ **Открытый пробел (31.08.2026).** `CheckProfile` на demo просит для ИП ещё
 > два блока, которых `submit-all` не заполняет:
