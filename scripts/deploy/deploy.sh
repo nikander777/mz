@@ -40,6 +40,9 @@ deploy_vm3() {
     ssh_cmd "$VM3_HOST" bash -s <<'REMOTE'
 cd /opt/muzilla
 git pull origin main
+# .env без перевода строки в конце — следующий `echo >> .env` склеит переменные
+# (прецедент VM-2: PAYMENTS_PLATFORM_PHONE прилип к DISCOGS_API_URL).
+bash scripts/deploy/env-append.sh --ensure-newline
 docker compose -f compose.vm3-data.yml pull
 docker compose -f compose.vm3-data.yml up -d
 sleep 10
@@ -54,6 +57,9 @@ deploy_vm2() {
     ssh_cmd "$VM2_HOST" bash -s <<'REMOTE'
 cd /opt/muzilla
 git pull origin main
+# .env без перевода строки в конце — следующий `echo >> .env` склеит переменные
+# (прецедент VM-2: PAYMENTS_PLATFORM_PHONE прилип к DISCOGS_API_URL).
+bash scripts/deploy/env-append.sh --ensure-newline
 docker compose -f compose.vm2-app.yml pull
 docker compose -f compose.vm2-app.yml up -d
 sleep 5
@@ -68,6 +74,9 @@ deploy_vm1() {
     ssh_cmd "$VM1_HOST" bash -s <<'REMOTE'
 cd /opt/muzilla
 git pull origin main
+# .env без перевода строки в конце — следующий `echo >> .env` склеит переменные
+# (прецедент VM-2: PAYMENTS_PLATFORM_PHONE прилип к DISCOGS_API_URL).
+bash scripts/deploy/env-append.sh --ensure-newline
 docker compose -f compose.vm1-edge.yml pull
 docker compose -f compose.vm1-edge.yml up -d
 sleep 10

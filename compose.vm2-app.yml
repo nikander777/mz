@@ -84,7 +84,59 @@ x-laravel-env: &laravel-env
   # Базовый URL фронтенда — используется в ссылках внутри email-шаблонов.
   APP_FRONTEND_URL: ${APP_FRONTEND_URL}
 
+  # === НКО МОНЕТА: MerchantAPI и исторический драйвер платежей ===
+  # На VM-2 эти переменные нужны не меньше, чем на edge. В main-queue и
+  # main-scheduler живут: сверка договоров и автосоздание расчётных шлюзов
+  # (ReconcileMonetaContractsJob, каждые 30 мин), сверка балансов продавцов
+  # (ReconcileSellerBalances, ежечасно), сверка зависших оплат
+  # (ReconcileMonetaPayments), выплаты (InitiateSellerPayout) и активация юнита
+  # после коллбека НКО (ActivateMonetaUnitJob — ставится в очередь на VM-1, а
+  # выполняется здесь). Без учётных данных они молча уходят в warning, договоры
+  # продавцов не становятся ACTIVE, выплаты не инициируются.
+  # Значения — те же, что в /opt/muzilla/.env на VM-1 (порядок переноса —
+  # docs/deployment/vm2-moneta-env.md). Дефолты повторяют compose.vm1-edge.yml:
+  # у MONETA_TEST_MODE в config/services.php дефолт true, поэтому здесь явный false.
+  MONETA_API_URL: ${MONETA_API_URL:-https://www.moneta.ru}
+  # ЛК2 «ООО М9 ЛК Клиенты» — CreateProfile/EditProfile/CreateAccount продавцов.
+  MONETA_USERNAME: ${MONETA_USERNAME}
+  MONETA_PASSWORD: ${MONETA_PASSWORD}
+  MONETA_UNIT_ROOT: ${MONETA_UNIT_ROOT}
+  MONETA_UNIT_REGISTERED: ${MONETA_UNIT_REGISTERED}
+  MONETA_UNIT_ACTIVE: ${MONETA_UNIT_ACTIVE}
+  MONETA_UNIT_WITHOUT_AGREEMENT: ${MONETA_UNIT_WITHOUT_AGREEMENT}
+  MONETA_ACCOUNT_PROTOTYPE: ${MONETA_ACCOUNT_PROTOTYPE}
+  MONETA_ACCOUNT_SUBTYPE: ${MONETA_ACCOUNT_SUBTYPE}
+  MONETA_MERCHANT_PAYMENT_PASSWORD: ${MONETA_MERCHANT_PAYMENT_PASSWORD}
+  # Коллбеки НКО принимает VM-1, но URL/секрет входят в общий конфиг сервиса.
+  MONETA_MERCHANT_WEBHOOK_URL: ${MONETA_MERCHANT_WEBHOOK_URL}
+  MONETA_MERCHANT_WEBHOOK_SECRET: ${MONETA_MERCHANT_WEBHOOK_SECRET}
+  MONETA_MERCHANT_WEBHOOK_VERIFY_VIA_API: ${MONETA_MERCHANT_WEBHOOK_VERIFY_VIA_API:-true}
+  MONETA_WEBHOOK_ALLOWED_IPS: ${MONETA_WEBHOOK_ALLOWED_IPS}
+  # ЛК1 «ООО М9 ЛК Счета» — счета площадки: сверка оплат и выплаты по заказам
+  # на историческом драйвере moneta (order_payments.provider).
+  MONETA_MERCHANT_ID: ${MONETA_MERCHANT_ID}
+  MONETA_API_LOGIN: ${MONETA_API_LOGIN}
+  MONETA_API_KEY: ${MONETA_API_KEY}
+  MONETA_SECRET_KEY: ${MONETA_SECRET_KEY}
+  MONETA_ACCOUNT_ID: ${MONETA_ACCOUNT_ID}
+  MONETA_TRANSIT_ACCOUNT: ${MONETA_TRANSIT_ACCOUNT}
+  MONETA_COMMISSION_ACCOUNT: ${MONETA_COMMISSION_ACCOUNT}
+  MONETA_SECURITY_ACCOUNT: ${MONETA_SECURITY_ACCOUNT}
+  MONETA_PAYMENT_PASSWORD: ${MONETA_PAYMENT_PASSWORD}
+  MONETA_TEST_MODE: ${MONETA_TEST_MODE:-false}
+  MONETA_USE_STUB: ${MONETA_USE_STUB:-false}
+  MONETA_WEBHOOK_URL: ${MONETA_WEBHOOK_URL}
+  MONETA_SUCCESS_URL: ${MONETA_SUCCESS_URL}
+  MONETA_FAIL_URL: ${MONETA_FAIL_URL}
+  # Имена атрибутов профиля НКО для налогового режима и ставки НДС.
+  # Пусто = не отправлять (нераспознанный ключ отбивает весь EditProfile).
+  MONETA_ATTR_TAX_REGIME: ${MONETA_ATTR_TAX_REGIME}
+  MONETA_ATTR_VAT_CODE: ${MONETA_ATTR_VAT_CODE}
 
+  # === Гейт каталога: товары видны только после одобрения анкеты НКО ===
+  # На VM-2 читается фоновыми пересчётами can_sell и индексацией каталога —
+  # значение обязано совпадать с VM-1, иначе очередь и веб разойдутся.
+  MZ_REQUIRE_MONETA_APPROVAL: ${MZ_REQUIRE_MONETA_APPROVAL:-true}
 
   # === Платежи: касса ПА ООО «ПЭЙ ЭНИ ВЭЙ» (54-ФЗ) ===
   # На VM-2 эти переменные нужны не меньше, чем на edge: подтверждение холдов

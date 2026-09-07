@@ -83,6 +83,15 @@ CI использует свой ключ — секрет `SSH_PRIVATE_KEY` в 
 | `NUXT_PUBLIC_YMAPS_API_KEY` | `.env` на VM-1 | Yandex Maps (build-time для Nuxt, на проде runtime override) |
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | `.env` VM-3 | MinIO админ |
 | `ADMIN_*` (EMAIL/PHONE/PASSWORD/...) | `.env` VM-1, VM-2 | Super Admin для seeder'а |
+| `MONETA_*`, `MZ_REQUIRE_MONETA_APPROVAL` | `.env` на VM-1, VM-2 (значения 1-в-1) | НКО МОНЕТА: MerchantAPI (анкеты и счета продавцов), исторический драйвер оплаты, выплаты. На VM-2 обязательны — сверки договоров/балансов и выплаты живут в `main-queue`/`main-scheduler`. Порядок переноса — [`docs/deployment/vm2-moneta-env.md`](docs/deployment/vm2-moneta-env.md) |
+| `BPA_*`, `PAYMENTS_*` | `.env` на VM-1, VM-2 | Касса ПА «ПЭЙ ЭНИ ВЭЙ» (54-ФЗ): приём денег и чеки на VM-1; подтверждение холдов, сверка операций и возвраты — в фоне на VM-2 |
+
+> **Дописывать переменные в живой `.env` — только через `scripts/deploy/env-append.sh`.**
+> `echo "KEY=VALUE" >> .env` на файле без перевода строки в конце приклеивает переменную
+> к последней строке (прецедент VM-2: `PAYMENTS_PLATFORM_PHONE` прилип к `DISCOGS_API_URL`,
+> обе перестали читаться). Скрипт проверяет `tail -c1`, не дублирует ключи, умеет
+> `--stdin` для переноса блока с другой VM и `--check` для аудита файла. Деплой
+> (`deploy.sh`, `prod-deploy.yml`) сам добивает перевод строки перед `compose up`.
 
 GitHub Secrets (ops-репо `nikander777/mz`, Settings → Secrets and variables → Actions):
 
@@ -125,6 +134,12 @@ GitHub Secrets (ops-репо `nikander777/mz`, Settings → Secrets and variable
 > **Память VM-2 (8 GB)** очень тесная. Текущая конфигурация (4 discogs-queue + main-queue +
 > main-scheduler + reverb + redis) занимает ~6.5 GB + swap. Не масштабируйте discogs-queue выше
 > 4 без апгрейда — OOM-killer убьёт reverb/redis.
+
+> **Платёжные креды на VM-2.** `x-laravel-env` в `compose.vm2-app.yml` пробрасывает
+> `MONETA_*`, `MZ_REQUIRE_MONETA_APPROVAL`, `BPA_*`, `PAYMENTS_*` — те же значения, что на
+> VM-1. Без них `main-queue`/`main-scheduler` крутят `ReconcileMonetaContractsJob`,
+> `ReconcileSellerBalances`, `InitiateSellerPayout` вхолостую (warning в логах, выплаты не
+> включаются). Перенос значений и точечный recreate — `docs/deployment/vm2-moneta-env.md`.
 
 ### VM-3 (Data) — `compose.vm3-data.yml`
 
@@ -241,9 +256,8 @@ bash scripts/deploy/deploy.sh --all   # деплой VM-3 → VM-2 → VM-1 (п�
 # На VM-1:
 ssh -i ~/.ssh/id_rsa root@90.156.211.143
 cd /opt/muzilla
-# В .env временно подменить:
-echo "MAIN_TAG=sha-<good_commit>" >> .env
-echo "DISCOGS_TAG=sha-<good_commit>" >> .env
+# В .env временно подменить (--replace: *_TAG=latest там уже есть):
+bash scripts/deploy/env-append.sh --replace MAIN_TAG=sha-<good_commit> DISCOGS_TAG=sha-<good_commit>
 docker compose -f compose.vm1-edge.yml pull main main-web discogs discogs-web
 docker compose -f compose.vm1-edge.yml up -d
 ```
@@ -582,9 +596,10 @@ nuxt + main + discogs + edge. Используется для smoke-теста �
 ```bash
 cd /Users/nikander/Sites/mz
 cp .env.prod.example .env
-# Сгенерировать секреты:
-echo "POSTGRES_PASSWORD=$(openssl rand -hex 32)" >> .env
-echo "MEILI_MASTER_KEY=$(openssl rand -hex 32)" >> .env
+# Сгенерировать секреты (--replace: в примере ключи есть с пустым значением):
+bash scripts/deploy/env-append.sh --replace \
+  "POSTGRES_PASSWORD=$(openssl rand -hex 32)" \
+  "MEILI_MASTER_KEY=$(openssl rand -hex 32)"
 # ...и т.д.
 make build
 make up
@@ -813,7 +828,8 @@ ssh root@92.255.105.112 'mkdir -p /opt/muzilla/legacy'
 scp -i ~/.ssh/id_rsa /tmp/mz-legacy.sql.gz root@92.255.105.112:/opt/muzilla/legacy/
 
 # 3. Сгенерировать LEGACY_MYSQL_PASSWORD на VM-3 и положить в /opt/muzilla/.env
-ssh root@92.255.105.112 'echo "LEGACY_MYSQL_PASSWORD=$(openssl rand -hex 32)" >> /opt/muzilla/.env'
+ssh root@92.255.105.112 'cd /opt/muzilla && \
+  bash scripts/deploy/env-append.sh "LEGACY_MYSQL_PASSWORD=$(openssl rand -hex 32)"'
 
 # 4. Поднять legacy-mysql, импортировать дамп, открыть UFW для VM-1
 ssh root@92.255.105.112 'cd /opt/muzilla && \
@@ -824,7 +840,7 @@ ssh root@92.255.105.112 'cd /opt/muzilla && \
   ufw allow from 90.156.211.143 to any port 33060'
 
 # 5. На VM-1 в /opt/muzilla/.env прописать LEGACY_DB_*
-ssh root@90.156.211.143 'cat >> /opt/muzilla/.env <<EOF
+ssh root@90.156.211.143 'cd /opt/muzilla && bash scripts/deploy/env-append.sh --stdin <<EOF
 LEGACY_DB_HOST=92.255.105.112
 LEGACY_DB_PORT=33060
 LEGACY_DB_DATABASE=mz
