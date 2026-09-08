@@ -306,7 +306,7 @@ services:
     # — так с мая потерялись 1648 задач main, включая сверку платежей и
     # обновление отправлений СДЭК. Свои джобы discogs всегда кладёт в
     # именованные очереди image-*.
-    command: php artisan queue:work --queue=image-loading-high,image-processing,image-loading,image-download --tries=3 --timeout=300
+    command: php artisan queue:work --queue=image-loading-high,image-processing,image-download --tries=3 --timeout=300
     environment:
       <<: *laravel-env
       APP_KEY: ${DISCOGS_APP_KEY}
@@ -319,6 +319,24 @@ services:
       # split-xml который пишет partitions рядом с дампом.
       - /mnt/disk2:/discogs-dump
     depends_on: [redis]
+    restart: unless-stopped
+
+  # Воркеры массового добора обложек. Отдельны от discogs-queue намеренно:
+  # тот обслуживает image-loading-high, куда ленивая загрузка кладёт задачи по
+  # факту просмотра карточки, и просмотры не должны стоять за миллионами
+  # фоновых задач. Реплик по умолчанию 4 — на VM-2 четыре ядра, а конвертация
+  # в WebP упирается в CPU; потолок сверху задаёт пул прокси (20 IP).
+  discogs-queue-bulk:
+    image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
+    command: php artisan queue:work --queue=image-loading --tries=3 --timeout=300 --sleep=3
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${DISCOGS_APP_KEY}
+      APP_URL: ${DISCOGS_APP_URL}
+      DB_DATABASE: ${DISCOGS_DB_DATABASE}
+    depends_on: [redis]
+    deploy:
+      replicas: ${DISCOGS_BULK_WORKERS:-4}
     restart: unless-stopped
 
   discogs-scheduler:
