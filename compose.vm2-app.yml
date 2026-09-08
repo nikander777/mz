@@ -300,7 +300,13 @@ services:
 
   discogs-queue:
     image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
-    command: php artisan queue:work --queue=image-loading-high,image-processing,image-loading,default --tries=3 --timeout=300
+    # Очередь default намеренно НЕ слушаем: Redis общий с main и префикс ключей
+    # у обоих сервисов одинаковый (laravel_database_), поэтому discogs-воркер
+    # вытаскивал джобы main из default и ронял их «Job is incomplete class»
+    # — так с мая потерялись 1648 задач main, включая сверку платежей и
+    # обновление отправлений СДЭК. Свои джобы discogs всегда кладёт в
+    # именованные очереди image-*.
+    command: php artisan queue:work --queue=image-loading-high,image-processing,image-loading,image-download --tries=3 --timeout=300
     environment:
       <<: *laravel-env
       APP_KEY: ${DISCOGS_APP_KEY}
