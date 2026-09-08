@@ -284,6 +284,12 @@ services:
       NUXT_PUBLIC_LARAVEL_URL: ${NUXT_BACKEND_BASE_URL}
       # Раздел Hi-Fi. Должен совпадать с MZ_FEATURE_HIFI бэкенда (vm2).
       NUXT_PUBLIC_FEATURE_HIFI: ${MZ_FEATURE_HIFI:-false}
+      # Раздел «Производство LP» скрыт до доработки: ссылки не рендерятся,
+      # страница отдаёт 404. Вернуть = MZ_FEATURE_PRODUCTION=true + recreate.
+      NUXT_PUBLIC_FEATURE_PRODUCTION: ${MZ_FEATURE_PRODUCTION:-false}
+      # Содержимое FAQ скрыто до переработки раздела: страница остаётся
+      # в меню, но показывает уведомление о доработке вместо вопросов.
+      NUXT_PUBLIC_FEATURE_FAQ: ${MZ_FEATURE_FAQ:-false}
       # nuxt-auth-sanctum зашивает baseUrl из process.env.LARAVEL_URL во время
       # build (это http://main-web — внутренний docker host). Для client-side
       # cookies Sanctum должен ходить на public-домен → подменяем через

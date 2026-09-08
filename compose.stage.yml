@@ -395,6 +395,12 @@ services:
       # Должен совпадать с MZ_FEATURE_HIFI бэкенда, иначе меню и витрина
       # разъедутся (создать/продать всё равно не даст бэкенд).
       NUXT_PUBLIC_FEATURE_HIFI: ${MZ_FEATURE_HIFI:-false}
+      # Раздел «Производство LP» скрыт до доработки: ссылки не рендерятся,
+      # страница отдаёт 404. Вернуть = MZ_FEATURE_PRODUCTION=true + recreate.
+      NUXT_PUBLIC_FEATURE_PRODUCTION: ${MZ_FEATURE_PRODUCTION:-false}
+      # Содержимое FAQ скрыто до переработки раздела: страница остаётся
+      # в меню, но показывает уведомление о доработке вместо вопросов.
+      NUXT_PUBLIC_FEATURE_FAQ: ${MZ_FEATURE_FAQ:-false}
       NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE}
       NUXT_PUBLIC_REVERB_HOST: ${NUXT_PUBLIC_REVERB_HOST}
       NUXT_PUBLIC_REVERB_PORT: ${NUXT_PUBLIC_REVERB_PORT}
