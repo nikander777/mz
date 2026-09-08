@@ -53,6 +53,14 @@ x-laravel-env: &laravel-env
   S3_MEDIA_ENDPOINT: ${S3_MEDIA_ENDPOINT}
   S3_MEDIA_URL: ${S3_MEDIA_URL}
   S3_MEDIA_PATH_STYLE: ${S3_MEDIA_PATH_STYLE:-true}
+  # Алерты о протухшем пуле прокси Discogs (config/proxy.php в discogs).
+  # discogs-scheduler раз в 30 минут гоняет proxies:health и, когда живых
+  # прокси меньше порога, шлёт письмо и сообщение в MAX. Telegram намеренно
+  # не используем — с боевых серверов он недоступен без тех же прокси.
+  PROXY_ALERT_EMAIL: ${PROXY_ALERT_EMAIL:-}
+  PROXY_ALERT_MAX_USER_ID: ${PROXY_ALERT_MAX_USER_ID:-}
+  PROXY_ALERT_MIN_WORKING: ${PROXY_ALERT_MIN_WORKING:-5}
+  MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
   # Image Processing
   IMAGE_DISK: ${IMAGE_DISK:-s3-media}
   IMAGE_DRIVER: ${IMAGE_DRIVER:-gd}
