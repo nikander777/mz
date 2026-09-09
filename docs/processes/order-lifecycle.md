@@ -22,7 +22,7 @@
 | `order_shipments` (`OrderShipment`) | отправление: `delivery_method`, `tracking_number`, `qr_code_url`, `qr_pdf_url`, `status`, `tracking_data`, `provider_uuid` |
 | `order_items`, `order_addresses`, `order_messages`, `order_complaints` | позиции, адрес-снимок, переписка по заказу, жалобы/споры |
 
-Константы окон (в `Order`): `SELLER_CONFIRMATION_HOURS = 48`, `PAYOUT_HOLD_HOURS = 48`.
+Окна: подтверждение продавцом — 48 ч (`Order::sellerConfirmationHours()`, для СБП и карты значения разные). Удержание денег — `min(shipped_at + 24д, delivered_at + 17д)`, задаётся в `config/marketplace.php → payout` (`Order::computePayoutEligibleAt()`).
 
 ## Обзор жизненного цикла
 
@@ -34,10 +34,12 @@ stateDiagram-v2
   PAID --> PROCESSING: sellerConfirm() ≤48ч
   PAID --> CANCELLED: таймаут 48ч (джоба) / sellerDecline()
   PROCESSING --> SHIPPED: ship()
-  SHIPPED --> DELIVERED: трекинг (CheckDeliveryStatus)
-  DELIVERED --> COMPLETED: +48ч (ReleaseDeliveredOrders) → выплата
+  SHIPPED --> DELIVERED: посылка в ПВЗ (CheckDeliveryStatus)
+  DELIVERED --> COMPLETED: вручение (CheckDeliveryStatus)
+  SHIPPED --> COMPLETED: якорь отправки, вручение не подтверждено
   SHIPPED --> DISPUTED: dispute()
   DELIVERED --> DISPUTED: dispute()
+  COMPLETED --> DISPUTED: dispute() до выплаты
   PENDING --> CANCELLED: cancel()
   CONFIRMED --> CANCELLED: cancel()
   COMPLETED --> [*]
@@ -54,13 +56,13 @@ stateDiagram-v2
 | `PAID` | `paid` | Ожидает подтверждения продавца | Оплачен, окно продавца 48ч |
 | `PROCESSING` | `processing` | Подтверждён продавцом | Готовится к отправке (создана накладная/QR) |
 | `SHIPPED` | `shipped` | Отправлен | Передан в доставку |
-| `DELIVERED` | `delivered` | Доставлен | Получен покупателем |
-| `COMPLETED` | `completed` | Завершен | Финал: покупатель получил, инициирована выплата |
+| `DELIVERED` | `delivered` | Доставлен | Посылка в пункте выдачи, ждёт получателя |
+| `COMPLETED` | `completed` | Завершен | Покупатель забрал заказ. Статус витринный: деньги продавцу разблокируются отдельно, по окончании окна удержания |
 | `CANCELLED` | `cancelled` | Отменен | Отменён (в т.ч. автоотмена) |
 | `REFUNDED` | `refunded` | Возврат средств | Выполнен возврат |
 | `DISPUTED` | `disputed` | Спор | Ждёт решения модератора |
 
-Правила переходов зашиты в методы enum: `isFinal()` (`COMPLETED/CANCELLED/REFUNDED`), `isCancellable()` (`PENDING/CONFIRMED/PAID`), `canSellerConfirm()` (`PAID`), `canBuyerDispute()` (`SHIPPED/DELIVERED`), `canBuyerReview()`/`allowsProductReview()` — см. [Отзывы](/processes/reviews).
+Правила переходов зашиты в методы enum: `isFinal()` (`COMPLETED/CANCELLED/REFUNDED`), `isCancellable()` (`PENDING/CONFIRMED/PAID`), `canSellerConfirm()` (`PAID`), `canBuyerDispute()` (`SHIPPED/DELIVERED`; полное правило — `Order::canBuyerDispute()`: в `COMPLETED` спор доступен, пока выплата не инициирована), `canBuyerReview()`/`allowsProductReview()` — см. [Отзывы](/processes/reviews).
 
 Отдельные enum'ы: `PaymentStatus` (`pending/processing/completed/failed/cancelled/refunded`), `DeliveryStatus` (`pending/awaiting_shipment/shipped/in_transit/arrived/delivered/returned/cancelled/error`).
 
@@ -105,8 +107,8 @@ stateDiagram-v2
 |---|---|---|
 | `CancelUnconfirmedPaidOrders` | каждый час | `PAID` с истёкшим `seller_confirmation_deadline` → `CANCELLED` + возврат |
 | `SendUnconfirmedOrderReminders` | каждый час | напоминания продавцу через 3/6/24/36ч (антидубль по `confirmation_reminder_stage`) |
-| `CheckDeliveryStatus` | каждые 6 часов | поллинг трека (СДЭК API v2 / Почта SOAP; на demo — таймер-стаб 1д→в пути, 3д→ПВЗ, 5д→доставлено); при доставке → `OrderDelivered` |
-| `ReleaseDeliveredOrders` | каждый час | доставленные с `payout_eligible_at ≤ now` и без спора → `COMPLETED` + `OrderCompleted` + `InitiateSellerPayout` |
+| `CheckDeliveryStatus` | каждые 6 часов | поллинг трека (СДЭК API v2 / Почта SOAP; на demo — таймер-стаб 1д→в пути, 3д→ПВЗ, 5д→доставлено). Прибытие в ПВЗ → `DELIVERED`, вручение → `COMPLETED` + `OrderDelivered` + `OrderCompleted` |
+| `ReleaseDeliveredOrders` | каждый час | невыплаченные (`seller_payout_status IS NULL`) с `payout_eligible_at ≤ now` и без спора → `InitiateSellerPayout`; заказы, вручение которых перевозчик не подтвердил, заодно доводит до `COMPLETED` |
 | `RefreshPendingCdekShipments` | каждые 15 минут | добор трек-номера и PDF-накладной СДЭК |
 
 ## События и уведомления
@@ -118,7 +120,7 @@ stateDiagram-v2
 | `OrderPaid` | `SendOrderPaidNotification` | письмо + in-app продавцу |
 | `OrderSellerConfirmed` | `CreateShipmentOnSellerConfirmed` | заявка перевозчику, QR/накладная, письмо продавцу |
 | `OrderShipped` | `SendOrderShippedNotification` | уведомление покупателю |
-| `OrderDelivered` | `DispatchSellerPayoutOnDelivered` | взводит `payout_eligible_at = delivered_at + 48ч` |
+| `OrderDelivered` | `DispatchSellerPayoutOnDelivered` | пересчитывает `payout_eligible_at` (не выплачивает) |
 | `OrderDelivered` | `SendOrderDeliveredNotification` | уведомление покупателю |
 | `OrderCompleted` | `SendOrderCompletedNotification` | уведомление продавцу |
 | `OrderCancelled` | `SendOrderCancelledNotification` | уведомление сторонам |
@@ -130,7 +132,8 @@ stateDiagram-v2
 | Ситуация | Поведение системы | Кто чинит |
 |---|---|---|
 | Продавец не подтвердил за 48ч | `CancelUnconfirmedPaidOrders` → авто-`CANCELLED` + возврат | автоматически |
-| Покупатель не подтвердил получение | `ReleaseDeliveredOrders` авто-завершает через 48ч после доставки | автоматически |
+| Перевозчик не подтвердил вручение | `ReleaseDeliveredOrders` завершает по якорю отправки (24д) | автоматически |
+| Статусы доставки не двигаются | проверить `order_shipments.tracking_data.last_checked_at` и лог `CDEK: неизвестный код статуса`; дожать `php artisan delivery:advance {номер заказа}` | поддержка |
 | Спор открыт (`DISPUTED`) | заказ исключён из автовыплаты, деньги на транзите | модератор (админка) |
 | Вебхук доставки/оплаты потерялся | поллинг `CheckDeliveryStatus` / статусы Moneta досверяются | автоматически (fallback-джобы) |
 | Отмена уже оплаченного | `cancelOrder()` возвращает склад и деньги | покупатель/продавец/поддержка |
@@ -139,9 +142,9 @@ stateDiagram-v2
 
 **Приоритет P0.** Ключевые проверки — полный «счастливый путь» и ветки автоматики:
 
-1. `checkout → PAID → sellerConfirm → SHIPPED → DELIVERED → COMPLETED` (с проверкой `OrderStatusHistory` на каждом шаге).
+1. `checkout → PAID → sellerConfirm → SHIPPED → DELIVERED (ПВЗ) → COMPLETED (вручение)` (с проверкой `OrderStatusHistory` на каждом шаге).
 2. Автоотмена: `PAID` без подтверждения + перевод часов → `CANCELLED` + возврат (джоба `CancelUnconfirmedPaidOrders`).
-3. Автозавершение: `DELIVERED` + 48ч → `COMPLETED` + инициирована выплата.
+3. Разблокировка денег: истечение окна удержания → `InitiateSellerPayout` (по уже завершённому заказу тоже).
 4. Спор: `dispute()` из `SHIPPED/DELIVERED` → заказ не уходит в автовыплату.
 5. Отмена оплаченного → возврат склада и денег.
 
