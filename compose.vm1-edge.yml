@@ -28,6 +28,10 @@ x-laravel-env: &laravel-env
   QUEUE_CONNECTION: redis
   BROADCAST_CONNECTION: reverb
   SCOUT_DRIVER: meilisearch
+  # Индексация в Meilisearch — только через очередь. При синхронном режиме
+  # любое сохранение Searchable-модели делает HTTP-запрос в Meili прямо
+  # внутри веб-запроса, и недоступный Meili отдаёт 500 вместо ответа.
+  SCOUT_QUEUE: "true"
   MEILISEARCH_HOST: http://${VM3_HOST}:7700
   MEILISEARCH_KEY: ${MEILI_MASTER_KEY}
   # Драйвер каталога discogs: database (Postgres) | meili. Флипается через .env.
