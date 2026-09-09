@@ -53,6 +53,7 @@ npm run docs:build    # статическая сборка в docs/.vitepress/d
 - [`demo-deployment.md`](deployment/demo-deployment.md) — разворачивание демо-окружения
 - [`production-env.md`](deployment/production-env.md) — обязательные production переменные окружения
 - [`vm2-moneta-env.md`](deployment/vm2-moneta-env.md) — проброс `MONETA_*` на VM-2 (queue/scheduler): перенос значений с VM-1, точечный recreate, проверка `.env` на склейки
+- [`meili-releases-rebuild.md`](deployment/meili-releases-rebuild.md) — ранбук по индексу `releases` в Meilisearch: swap с `releases_new` (37%→65%), диагностика приёма записи, изолированный стенд, перенос в прод
 - [`production-reverb-config-example.php`](deployment/production-reverb-config-example.php) — шаблон `config/reverb.php`
 - [`reverb.service.example`](deployment/reverb.service.example) — systemd-unit для Reverb
 
