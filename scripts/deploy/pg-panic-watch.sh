@@ -31,6 +31,7 @@
 
 LOG=/var/log/pg-panic-watch.log
 COOLDOWN_FILE=/var/lib/pg-panic-watch.last-restart
+SEEN_FILE=/var/lib/pg-panic-watch.last-seen
 COOLDOWN=900
 STUCK_AGE=180
 
@@ -39,9 +40,22 @@ log() { echo "$(date -Is) $*" >> "$LOG"; }
 psql_q() { docker exec muzilla-postgres-1 psql -U muzilla -d postgres -Atc "$1" 2>/dev/null; }
 
 # 1. Контекст падений. Благодаря log_parameter_max_length_on_error = -1 сюда
-#    попадают значения bind-параметров, то есть id релиза — именно так был
-#    найден релиз 4384591 и его страница.
-docker logs --since 2m muzilla-postgres-1 2>&1 | grep -A6 'PANIC:' >> "$LOG"
+#    попадают значения bind-параметров, то есть id релиза — именно так
+#    выяснилось, что падают РАЗНЫЕ релизы (4384591 на странице 525307,
+#    2092171 на 141514) с одними и теми же числами в PANIC. Значит битой
+#    страницы кучи нет, ломается что-то общее для любого обновления.
+#
+#    Окно чтения шире периода запуска, иначе падение на стыке минут потеряется.
+#    Расплата — та же запись видна дважды, поэтому отсекаем уже сохранённое
+#    по метке времени последней записанной строки.
+seen=$(cat "$SEEN_FILE" 2>/dev/null || echo '0000-00-00 00:00:00')
+fresh=$(docker logs --since 2m muzilla-postgres-1 2>&1 | grep -A6 'PANIC:' \
+        | awk -v seen="$seen" '$0 ~ /^[0-9][0-9][0-9][0-9]-/ { ts = $1 " " $2; keep = (ts > seen) } keep')
+
+if [ -n "$fresh" ]; then
+    echo "$fresh" >> "$LOG"
+    echo "$fresh" | awk '$0 ~ /^[0-9][0-9][0-9][0-9]-/ { ts = $1 " " $2 } END { print ts }' > "$SEEN_FILE"
+fi
 
 # 2. Залипшие бэкенды по всему кластеру, старше порога.
 stuck=$(psql_q "select count(*) from pg_stat_activity where state = 'active' and wait_event = 'BufferIo' and query_start < now() - interval '$STUCK_AGE seconds';")
