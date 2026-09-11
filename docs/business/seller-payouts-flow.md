@@ -182,6 +182,14 @@ php artisan products:meili-index                  # синхронизация �
 возврата берут ставку и название из позиции, а не пересчитывают: смена режима
 продавца или правил санитизации после оплаты чек не меняет.
 
+После подачи анкеты в НКО форма выплат у продавца read-only, и сменить режим или
+ставку он сам не может. Это делает поддержка из админки: карточка продавца →
+блок «Налогообложение» → `PATCH /api/admin/sellers/{sellerProfile}/tax`
+(право `sellers.edit`, есть у admin/super-admin). Ручка хранит ставку
+разрезолвленной, правит сохранённый payload анкеты (prefill формы продавца) и
+пишет запись в журнал действий. Действует только на позиции, по которым счёт
+ещё не выставлялся — см. снапшот выше.
+
 > ⚠️ **В профиль НКО налоговые данные не передаются — их там нет.**
 > Проверено живьём на demo.moneta.ru 31.08.2026: `CheckProfile` для ЮЛ/ИП
 > перечисляет только скоупы Personal / Director / Juridical / Bank, а
@@ -332,6 +340,10 @@ InitiateSellerPayout → PayoutService::initiateSellerPayout(order)
 `show` · `check` (CheckProfile в НКО — что осталось) · `register` · `fill-personal` · `fill-director` · `attach-bank` · `attach-passport` · `accept-conditions` · `agreement` (markAgreementSigned) · `activate`.
 
 Через них поддержка исправляет/переоформляет онбординг продавца, когда самообслуживание заблокировано.
+
+Налоговые данные для чека — `Admin\SellerController::updateTax`
+(`PATCH /api/admin/sellers/{sellerProfile}/tax`, право `sellers.edit`): система
+налогообложения и ставка НДС, см. «Шаг 0.5».
 
 ## Ключевые файлы
 
