@@ -163,6 +163,22 @@ x-laravel-env: &laravel-env
   CDEK_BASE_URL: ${CDEK_BASE_URL:-}
   CDEK_TIMEOUT: ${CDEK_TIMEOUT:-30}
   CDEK_FORCE_SHIPMENT_POINT: ${CDEK_FORCE_SHIPMENT_POINT:-}
+  # Вебхук СДЭК ORDER_STATUS: снимает зависимость от частоты поллинга. Подписка
+  # заводится командой cdek:register-webhook, секрет — единственная защита
+  # (подписи у уведомлений СДЭК нет), поэтому живёт в .env на сервере.
+  CDEK_WEBHOOK_SECRET: ${CDEK_WEBHOOK_SECRET:-}
+  CDEK_WEBHOOK_URL: ${CDEK_WEBHOOK_URL:-}
+  # === Окно на передачу посылки перевозчику ===
+  # Считается ОТ СОЗДАНИЯ заказа: подтверждение продавцом срок не сдвигает.
+  # Не уложился — автоотмена с возвратом покупателю (CancelUnshippedOrders).
+  # deadline_since — предохранитель от лавины на первом прогоне после релиза:
+  # заказы, оформленные раньше этой даты, автоотмена не трогает.
+  SHIPPING_DEADLINE_HOURS: ${SHIPPING_DEADLINE_HOURS:-48}
+  SHIPPING_REMINDER_HOURS: ${SHIPPING_REMINDER_HOURS:-12,24,36}
+  SHIPPING_DEADLINE_SINCE: ${SHIPPING_DEADLINE_SINCE:-2026-09-16 00:00:00}
+  SHIPPING_CANCEL_BATCH_SIZE: ${SHIPPING_CANCEL_BATCH_SIZE:-100}
+  SHIPPING_POSTPONE_ALERT_HOURS: ${SHIPPING_POSTPONE_ALERT_HOURS:-6}
+  SHIPPING_TRACKING_SILENCE_HOURS: ${SHIPPING_TRACKING_SILENCE_HOURS:-12}
   # SMS-провайдер (sms4b.ru) — main отправляет коды регистрации.
   SMS_PROVIDER: ${SMS_PROVIDER}
   SMS4B_TOKEN: ${SMS4B_TOKEN}
