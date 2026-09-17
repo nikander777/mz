@@ -123,7 +123,12 @@ jobs:
             docker compose -f compose.vm1-edge.yml exec -T main php artisan migrate --force || true
             docker compose -f compose.vm1-edge.yml exec -T discogs php artisan migrate --force || true
           fi
-          docker compose -f compose.vm1-edge.yml restart edge
+          # Именно --force-recreate, а не restart: nginx.conf прокинут в контейнер
+          # bind-mount'ом ОДНОГО файла, то есть привязан к inode. `git pull` при
+          # изменении файла создаёт новый inode, и перезапущенный (не пересозданный)
+          # контейнер продолжает читать старое содержимое — правка конфига молча
+          # не доезжает до прода.
+          docker compose -f compose.vm1-edge.yml up -d --force-recreate edge
           sleep 5
           for i in 1 2 3 4 5; do
             curl -sf http://localhost:8080/health > /dev/null && echo "Health OK ($i)" && break
