@@ -63,6 +63,21 @@ x-laravel-env: &laravel-env
   S3_MEDIA_ENDPOINT: ${S3_MEDIA_ENDPOINT}
   S3_MEDIA_URL: ${S3_MEDIA_URL}
   S3_MEDIA_PATH_STYLE: ${S3_MEDIA_PATH_STYLE:-true}
+  # Приватное S3 (Timeweb Cloud): загрузки продавцов, которые не должны
+  # открываться по прямой ссылке. Бакет s3-media публичен на чтение,
+  # приватный ACL объекта там не работает — нужен отдельный бакет.
+  S3_PRIVATE_KEY: ${S3_PRIVATE_KEY}
+  S3_PRIVATE_SECRET: ${S3_PRIVATE_SECRET}
+  S3_PRIVATE_REGION: ${S3_PRIVATE_REGION:-ru-1}
+  S3_PRIVATE_BUCKET: ${S3_PRIVATE_BUCKET}
+  S3_PRIVATE_ENDPOINT: ${S3_PRIVATE_ENDPOINT}
+  S3_PRIVATE_PATH_STYLE: ${S3_PRIVATE_PATH_STYLE:-true}
+  # Импорт лотов файлом. Веб принимает файл на VM-1, разбирает его воркер
+  # на VM-2 — на local-диске файл до воркера не доезжает, поэтому общее
+  # хранилище. Очередь отдельная: разбор занимает минуты и в default
+  # придерживал бы письма и платежи (main-queue-imports на VM-2).
+  PRODUCT_IMPORT_DISK: ${PRODUCT_IMPORT_DISK:-s3-private}
+  PRODUCT_IMPORT_QUEUE: ${PRODUCT_IMPORT_QUEUE:-imports}
   # Image Processing
   IMAGE_DISK: ${IMAGE_DISK:-s3-media}
   IMAGE_DRIVER: ${IMAGE_DRIVER:-gd}

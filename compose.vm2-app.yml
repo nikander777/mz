@@ -57,6 +57,21 @@ x-laravel-env: &laravel-env
   S3_MEDIA_ENDPOINT: ${S3_MEDIA_ENDPOINT}
   S3_MEDIA_URL: ${S3_MEDIA_URL}
   S3_MEDIA_PATH_STYLE: ${S3_MEDIA_PATH_STYLE:-true}
+  # Приватное S3 (Timeweb Cloud): загрузки продавцов, которые не должны
+  # открываться по прямой ссылке. Бакет s3-media публичен на чтение,
+  # приватный ACL объекта там не работает — нужен отдельный бакет.
+  S3_PRIVATE_KEY: ${S3_PRIVATE_KEY}
+  S3_PRIVATE_SECRET: ${S3_PRIVATE_SECRET}
+  S3_PRIVATE_REGION: ${S3_PRIVATE_REGION:-ru-1}
+  S3_PRIVATE_BUCKET: ${S3_PRIVATE_BUCKET}
+  S3_PRIVATE_ENDPOINT: ${S3_PRIVATE_ENDPOINT}
+  S3_PRIVATE_PATH_STYLE: ${S3_PRIVATE_PATH_STYLE:-true}
+  # Импорт лотов файлом. Веб принимает файл на VM-1, разбирает его воркер
+  # на VM-2 — на local-диске файл до воркера не доезжает, поэтому общее
+  # хранилище. Очередь отдельная: разбор занимает минуты и в default
+  # придерживал бы письма и платежи (main-queue-imports на VM-2).
+  PRODUCT_IMPORT_DISK: ${PRODUCT_IMPORT_DISK:-s3-private}
+  PRODUCT_IMPORT_QUEUE: ${PRODUCT_IMPORT_QUEUE:-imports}
   # Алерты о протухшем пуле прокси Discogs (config/proxy.php в discogs).
   # discogs-scheduler раз в 30 минут гоняет proxies:health и, когда живых
   # прокси меньше порога, шлёт письмо и сообщение в MAX. Telegram намеренно
@@ -299,6 +314,22 @@ services:
     # Очереди перечислены в порядке приоритета. Тяжёлые медиа-задачи вынесены
     # в main-queue-media, иначе перенос фото блокирует письма и платежи.
     command: php artisan queue:work --queue=default,cache-warm --tries=3 --timeout=120
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${MAIN_APP_KEY}
+      APP_URL: ${MAIN_APP_URL}
+      DB_DATABASE: ${MAIN_DB_DATABASE}
+    depends_on: [redis]
+    restart: unless-stopped
+
+  # Импорт лотов файлом. Очередь отдельная от default: разбор файла на
+  # 5000 строк идёт минутами и в общей очереди придерживал бы письма,
+  # платежи и уведомления. Таймаут под ProcessProductImport (timeout=1800),
+  # tries=1 — повтор наполовину применённого файла создал бы дубли.
+  main-queue-imports:
+    logging: *default-logging
+    image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
+    command: php artisan queue:work --queue=imports --tries=1 --timeout=1800
     environment:
       <<: *laravel-env
       APP_KEY: ${MAIN_APP_KEY}
