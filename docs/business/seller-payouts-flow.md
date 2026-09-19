@@ -344,7 +344,7 @@ InitiateSellerPayout → PayoutService::initiateSellerPayout(order)
 | # | Ситуация | Поведение системы | Кто и как чинит |
 |---|---|---|---|
 | 1 | Опечатка в ИНН/наименовании **до** оформления (`not_started`/`filling`) | Поля редактируемы | Продавец сам — на «Подключение выплат» |
-| 2 | Опечатка обнаружена **после** отправки/активации (`verifying`/`active`) | 403 на запись | **Поддержка** (`MonetaSellerController`): `check` → `fill-*`/`attach-*`; при сильном расхождении — `register` заново |
+| 2 | Опечатка обнаружена **после** отправки/активации (`verifying`/`active`) | 403 на запись | Продавец подаёт **заявку на изменение** (см. ниже); после согласования данные вносит **поддержка** (`MonetaSellerController`): `check` → `fill-*`/`attach-*`; при сильном расхождении — `register` заново |
 | 3 | Смена юр.формы (ФЛ↔ИП↔ЮЛ) | Read-only (мы закрыли «тихую» смену) | **Поддержка**: новая регистрация юнита + новое заявление |
 | 4 | Заявление не дошло в НКО за 30 дней | НКО → `blocked` | **Поддержка/НКО**: повторная подача / `register` |
 | 5 | НКО заблокировала юнит (`blocked`) | `assertCanPayout` бросает, выплаты невозможны | Разбор с НКО; деньги копятся на транзите |
@@ -354,7 +354,36 @@ InitiateSellerPayout → PayoutService::initiateSellerPayout(order)
 | 9 | Удаление профиля с активным договором | `deleteProfile` чистит профиль, `is_seller=false`, **юнит в НКО не закрывает** | ⚠️ Открытый вопрос — ручное закрытие через поддержку (см. бэклог) |
 
 > Сценарий №6 закрыт доработкой: для ФЛ реквизиты выплат самообслуживаемы в любом статусе.
-> №9 и сквозной «безопасный канал смены реквизитов» — в бэклоге, пока не делаем.
+> №9 — в бэклоге, пока не делаем.
+
+## Заявка на изменение юридических данных
+
+Сквозной канал правок вместо переписки с поддержкой (17.09.2026). Раньше
+закрытая анкета предлагала написать на `support@muzilla.ru` — канал без следа:
+кто что просил, что решили и почему, нигде не фиксировалось.
+
+```
+Продавец (анкета read-only) ──POST profile/seller/change-requests {полная анкета}──▶ Платформа
+   Платформа: diff против PayoutSetupPrefill (то же «как есть», что заполняет форму)
+              → seller_change_requests {payload 🔒, changed_fields 🔒, status=pending}
+   Админ ──GET admin/sellers/change-requests──▶ таблица «Поле | Было | Стало»
+   Админ ──POST .../{id}/reject {reason}──▶ статус rejected + письмо продавцу + журнал действий
+```
+
+| Что | Где |
+|---|---|
+| Таблица | `seller_change_requests`, обе колонки с данными — `encrypted:array` (паспорт, расчётный счёт) |
+| Правило | одна `pending`-заявка на профиль; повторная отбивается 422 |
+| Сравнение | `App\Support\Seller\PayoutSetupPrefill` — общий источник «как есть» с `GET payout-setup/status` |
+| Валидация | `ChangeRequestSubmitRequest extends SubmitAllRequest` — правила анкеты целиком, включая контрольную сумму счёта по БИК |
+| Право админа | `sellers.moderate` (есть у `admin` и `support`) |
+| Фронт | `/seller/payout-setup/change-request` (форма), `/admin/sellers/change-requests` (очередь) |
+
+> ⚠️ **Одобрения пока нет.** Кнопка «Одобрить» в админке задизейблена, маршрута
+> `approve` не существует, статус `approved` заведён в enum на будущее. Применение
+> изменений к `seller_profiles` и рассылка новых скоупов в НКО остаются ручной
+> операцией поддержки через `Admin\MonetaSellerController`. Заявка на этом этапе —
+> формализованный запрос и журнал решения, а не автоматическая правка.
 
 ## Инструменты поддержки
 
@@ -383,4 +412,5 @@ InitiateSellerPayout → PayoutService::initiateSellerPayout(order)
 | Джобы онбординга | `app/Jobs/RegisterSellerInMonetaJob.php`, `ActivateMonetaUnitJob.php`, `ReconcileMonetaContractsJob.php` |
 | Модель | `app/Models/SellerProfile.php` |
 | Поддержка (админ) | `app/Http/Controllers/Admin/MonetaSellerController.php` |
-| Фронт продавца | `nuxt/pages/seller/index.vue`, `nuxt/pages/seller/payout-setup.vue`, `nuxt/components/payout/IndividualForm.vue` |
+| Заявки на изменение | `app/Models/SellerChangeRequest.php`, `app/Services/Seller/SellerChangeRequestService.php`, `app/Http/Controllers/{Api/Profile,Admin}/SellerChangeRequestController.php` |
+| Фронт продавца | `nuxt/pages/seller/index.vue`, `nuxt/pages/seller/payout-setup/index.vue`, `nuxt/pages/seller/payout-setup/change-request.vue`, `nuxt/components/payout/SetupFormFields.vue` |
