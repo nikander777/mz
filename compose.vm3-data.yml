@@ -3,8 +3,19 @@
 # При наличии VLAN можно поставить VM3_BIND=<private_ip> в .env.
 name: muzilla-data
 
+# Ротация логов Docker. Без неё json-лог растёт безгранично: 19.09.2026
+# лог main-queue в петле MakeSearchable(artists) набрал 50 ГБ, диск VM-2
+# ушёл в 100%, Redis не смог писать RDB и начал отдавать MISCONF —
+# авторизация на сайте легла в 500.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "5"
+
 services:
   postgres:
+    logging: *default-logging
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -33,6 +44,7 @@ services:
       -c ssl_key_file=/var/lib/postgresql/data/server.key
 
   meilisearch:
+    logging: *default-logging
     image: getmeili/meilisearch:v1.53.1
     environment:
       MEILI_ENV: production
@@ -66,6 +78,7 @@ services:
     restart: unless-stopped
 
   minio:
+    logging: *default-logging
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
@@ -79,6 +92,7 @@ services:
     restart: unless-stopped
 
   pgbackups:
+    logging: *default-logging
     image: prodrigestivill/postgres-backup-local:17
     environment:
       POSTGRES_HOST: postgres

@@ -244,8 +244,19 @@ x-laravel-env: &laravel-env
   LEGACY_DB_USERNAME: ${LEGACY_DB_USERNAME:-root}
   LEGACY_DB_PASSWORD: ${LEGACY_DB_PASSWORD:-}
 
+# Ротация логов Docker. Без неё json-лог растёт безгранично: 19.09.2026
+# лог main-queue в петле MakeSearchable(artists) набрал 50 ГБ, диск VM-2
+# ушёл в 100%, Redis не смог писать RDB и начал отдавать MISCONF —
+# авторизация на сайте легла в 500.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "5"
+
 services:
   redis:
+    logging: *default-logging
     image: redis:7-alpine
     # На публичной сети без VLAN — обязательно с паролем.
     # maxmemory + noeviction: страховка от OOM-killer'а на VM-2 (8GB RAM).
@@ -269,6 +280,7 @@ services:
     restart: unless-stopped
 
   reverb:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
     command: php artisan reverb:start --host=0.0.0.0 --port=8080
     environment:
@@ -282,6 +294,7 @@ services:
     restart: unless-stopped
 
   main-queue:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
     # Очереди перечислены в порядке приоритета. Тяжёлые медиа-задачи вынесены
     # в main-queue-media, иначе перенос фото блокирует письма и платежи.
@@ -299,6 +312,7 @@ services:
   # MigrateProductPhotosBatchJob объявляет timeout=600 и качает пачку файлов
   # с images.muzilla.ru. Две реплики: миграция каталога упирается в сеть.
   main-queue-media:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
     command: php artisan queue:work --queue=legacy-photos,image-processing --tries=3 --timeout=900
     environment:
@@ -312,6 +326,7 @@ services:
     restart: unless-stopped
 
   main-scheduler:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
     command: php artisan schedule:work
     environment:
@@ -323,6 +338,7 @@ services:
     restart: unless-stopped
 
   discogs-queue:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
     # Очередь default намеренно НЕ слушаем: Redis общий с main и префикс ключей
     # у обоих сервисов одинаковый (laravel_database_), поэтому discogs-воркер
@@ -351,6 +367,7 @@ services:
   # фоновых задач. Реплик по умолчанию 4 — на VM-2 четыре ядра, а конвертация
   # в WebP упирается в CPU; потолок сверху задаёт пул прокси (20 IP).
   discogs-queue-bulk:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
     command: php artisan queue:work --queue=image-loading --tries=3 --timeout=300 --sleep=3
     environment:
@@ -364,6 +381,7 @@ services:
     restart: unless-stopped
 
   discogs-scheduler:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
     command: php artisan schedule:work
     environment:

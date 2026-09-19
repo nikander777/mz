@@ -242,8 +242,19 @@ x-laravel-env: &laravel-env
   LEGACY_DB_USERNAME: ${LEGACY_DB_USERNAME:-root}
   LEGACY_DB_PASSWORD: ${LEGACY_DB_PASSWORD:-}
 
+# Ротация логов Docker. Без неё json-лог растёт безгранично: 19.09.2026
+# лог main-queue в петле MakeSearchable(artists) набрал 50 ГБ, диск VM-2
+# ушёл в 100%, Redis не смог писать RDB и начал отдавать MISCONF —
+# авторизация на сайте легла в 500.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "5"
+
 services:
   main:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-main:${MAIN_TAG:-latest}
     environment:
       <<: *laravel-env
@@ -263,6 +274,7 @@ services:
     restart: unless-stopped
 
   main-web:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-main-web:${MAIN_TAG:-latest}
     environment:
       FPM_HOST: main
@@ -270,6 +282,7 @@ services:
     restart: unless-stopped
 
   discogs:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
     environment:
       <<: *laravel-env
@@ -281,6 +294,7 @@ services:
     restart: unless-stopped
 
   discogs-web:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-discogs-web:${DISCOGS_TAG:-latest}
     environment:
       FPM_HOST: discogs
@@ -288,6 +302,7 @@ services:
     restart: unless-stopped
 
   nuxt:
+    logging: *default-logging
     image: ghcr.io/nikander777/mz-nuxt:${NUXT_TAG:-latest}
     environment:
       NODE_ENV: production
@@ -342,6 +357,7 @@ services:
     restart: unless-stopped
 
   edge:
+    logging: *default-logging
     image: nginx:1.27-alpine
     ports:
       - "127.0.0.1:8080:80"
