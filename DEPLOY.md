@@ -80,6 +80,8 @@ CI использует свой ключ — секрет `SSH_PRIVATE_KEY` в 
 | `DISCOGS_API_TOKEN` | `.env` на VM-1, VM-2 | **Внутренний** Bearer для middleware `api.token` (Nuxt → discogs FPM); совпадает с `INTERNAL_API_TOKEN` |
 | `DISCOGS_USER_TOKEN` | `.env` на VM-1, VM-2 | Personal access token discogs.com (для api.discogs.com) |
 | `S3_MEDIA_KEY/SECRET/BUCKET/ENDPOINT` | `.env` на VM-1, VM-2 | Timeweb Object Storage для изображений |
+| `S3_PRIVATE_KEY/SECRET/BUCKET/ENDPOINT` | `.env` на VM-1, VM-2 | Timeweb Object Storage, бакет `muzilla-private` — файлы, которые нельзя открывать по прямой ссылке (загрузки продавцов). `muzilla-images` публичен на чтение, приватный ACL объекта там не работает |
+| `PRODUCT_IMPORT_DISK`, `PRODUCT_IMPORT_QUEUE` | compose (дефолты `s3-private` / `imports`) | Импорт лотов файлом. Веб принимает файл на VM-1, разбирает воркер на VM-2 — диск обязан быть общим, иначе импорт падает с «файл не найден на диске» |
 | `NUXT_PUBLIC_YMAPS_API_KEY` | `.env` на VM-1 | Yandex Maps (build-time для Nuxt, на проде runtime override) |
 | `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` | `.env` VM-3 | MinIO админ |
 | `ADMIN_*` (EMAIL/PHONE/PASSWORD/...) | `.env` VM-1, VM-2 | Super Admin для seeder'а |
@@ -128,6 +130,7 @@ GitHub Secrets (ops-репо `nikander777/mz`, Settings → Secrets and variable
 | `reverb` | `mz-main:latest` | `php artisan reverb:start --host=0.0.0.0 --port=8080`. Caddy/edge на VM-1 проксирует WSS трафик сюда. |
 | `main-queue` | `mz-main:latest` | `queue:work --tries=3 --timeout=120`. Слушает все default очереди main. |
 | `main-scheduler` | `mz-main:latest` | `schedule:work` — крон-задачи main. |
+| `main-queue-imports` | `mz-main:latest` | `queue:work --queue=imports --tries=1 --timeout=1800`. Загрузка лотов продавцом файлом: разбор идёт минутами, в `default` придерживал бы письма и платежи. Файл берётся с `s3-private` — local-диск VM-1 воркеру не виден. |
 | `discogs-queue` | `mz-discogs:latest` | `queue:work --queue=image-loading-high,image-processing,image-loading,default --tries=3 --timeout=300` — **с приоритетами** (см. раздел 6). По умолчанию scaled до 4 реплик (`docker compose up -d --scale discogs-queue=4`). Volume `/mnt/disk2:/discogs-dump` — для XML-дампов. |
 | `discogs-scheduler` | `mz-discogs:latest` | `schedule:work` — discogs-кроны (включая `proxies:reset-flags hourly`). |
 
@@ -284,6 +287,7 @@ bash scripts/deploy/health-check.sh --url https://muzilla.ru
 Redis на VM-2 — единственный broker. Workers на VM-2:
 
 - **`main-queue`** (1 контейнер) — `default` очередь main: SMS, оплаты, мейлинг.
+- **`main-queue-imports`** (1 контейнер) — очередь `imports`: загрузка лотов файлом.
 - **`discogs-queue`** (4 реплики) — discogs очереди **с приоритетами**:
   1. `image-loading-high` — lazy-load по факту просмотра карточки (юзер ждёт картинку)
   2. `image-processing` — постпроцессинг (resize, webp)
