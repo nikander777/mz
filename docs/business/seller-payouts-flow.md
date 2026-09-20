@@ -70,9 +70,11 @@
   `published_products_count` (критерий — `products.status = active`);
 - `start`, `submit-all` и `accept-conditions` без единого опубликованного лота
   отвечают **422** (`PayoutSetupController::assertHasPublishedProduct`);
-- страница `/seller/payout-setup` первым пунктом чек-листа показывает
-  «разместите товар», а вместо формы анкеты — заглушку со ссылкой на создание
-  лота.
+- на странице `/seller/payout-setup` вместо формы анкеты показывается заглушка
+  со ссылкой на создание лота;
+- сквозной баннер продавца (`SellerSaleBlockedBanner`) первым пунктом чек-листа
+  показывает «опубликуйте хотя бы один товар» — признак приходит в
+  `/api/auth/me` как `product_setup.has_published`.
 
 ---
 
