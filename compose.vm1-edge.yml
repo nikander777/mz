@@ -317,6 +317,19 @@ services:
       APP_KEY: ${DISCOGS_APP_KEY}
       APP_URL: ${DISCOGS_APP_URL}
       DB_DATABASE: ${DISCOGS_DB_DATABASE}
+      # Авто-синк Scout в Meili ОТКЛЮЧЁН (движок null): индексы дискографии
+      # (releases, artists) не принимают инкрементальные документы с 06.2026 —
+      # задача либо падает с «internal: FST error», либо роняет весь процесс
+      # Meili по SIGSEGV. 22.09.2026 это положило Meili в крэш-луп на ~10 минут
+      # сразу после того, как очередь disco-default впервые заработала: до этого
+      # Scout-джобы три месяца уезжали в общую очередь default и умирали в
+      # main-queue, то есть до Meili просто не доходили. Meili один на всех,
+      # поэтому падение уносит с собой и индекс products (каталог товаров).
+      # Чтение каталога это НЕ задевает: CatalogSearchService ходит в Meili
+      # собственным клиентом, а массовая заливка идёт командой disco:meili-index
+      # тоже мимо Scout. Вернуть meilisearch — только после того, как индексы
+      # дискографии научатся принимать запись. См. docs и память проекта.
+      SCOUT_DRIVER: "null"
     volumes:
       - discogs_storage:/var/www/html/storage
     restart: unless-stopped
