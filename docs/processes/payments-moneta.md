@@ -111,13 +111,13 @@ MNT_SAVE_CARD = '1'         (для card / card_binding)
 
 **Приоритет P0.** Ключевые проверки:
 
-1. Оплата картой: `initiate(card)` → форма → вебхук `succeed` → заказы batch в `PAID`, взведён `seller_confirmation_deadline`.
+1. Оплата картой: `initiate(card)` → форма → вебхук `succeed` → заказы batch в `PROCESSING`, взведён `shipping_deadline_at` (72ч).
 2. Отказ: вебхук `cancel` → заказ остаётся `CONFIRMED`, `payment_status=failed`.
 3. СБП: `initiate(sbp)` → в ответе `sbp_qr_url`/`sbp_link`.
 4. Привязка карты (`succeed_bind`) → запись `SavedPaymentMethod` + возврат 1₽.
 5. Оплата сохранённой картой (`saved_card` + `saved_method_id`).
 6. Идемпотентность вебхука: повторная доставка не создаёт вторую оплату.
-7. Мультизаказ: один `payment_batch_id` на несколько заказов → все в `PAID`.
+7. Мультизаказ: один `payment_batch_id` на несколько заказов → все в `PROCESSING`.
 
 **Покрытие автотестами:** `tests/Feature/CardPaymentTest.php`, `PaymentTest.php`, `RefundTest.php`, вебхуки (~27). **Пробел:** часть refund-флоу — см. [матрицу покрытия](/testing/coverage-matrix).
 
