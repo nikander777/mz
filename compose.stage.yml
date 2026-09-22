@@ -384,7 +384,11 @@ services:
 
   discogs-queue:
     image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
-    command: php artisan queue:work --tries=3 --timeout=120
+    # Очередь названа явно, хотя дефолт config/queue.php в mz.discogs даёт то же
+    # самое: Redis на стейдже, как и на проде, общий с main при одинаковом
+    # префиксе ключей, и очередь с именем default у двух сервисов — физически
+    # одна. Имя disco-default разводит их по разным спискам.
+    command: php artisan queue:work --queue=disco-default --tries=3 --timeout=120
     environment:
       <<: *laravel-env
       APP_KEY: ${DISCOGS_APP_KEY}

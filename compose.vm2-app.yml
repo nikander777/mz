@@ -390,7 +390,13 @@ services:
     # — так с мая потерялись 1648 задач main, включая сверку платежей и
     # обновление отправлений СДЭК. Свои джобы discogs всегда кладёт в
     # именованные очереди image-*.
-    command: php artisan queue:work --queue=image-loading-high,image-processing,image-download --tries=3 --timeout=300
+    #
+    # image-processing тоже убрана: имя было общим с main (там свой
+    # App\Jobs\ProcessImageThumbnails с другим конструктором), и очередь в
+    # общем Redis была одна на два сервиса — main-queue-media вытаскивал наши
+    # задачи и ронял их 742 446 раз. Теперь наша очередь — disco-image-processing
+    # (см. app/Jobs/ProcessImageThumbnails.php в mz.discogs).
+    command: php artisan queue:work --queue=image-loading-high,disco-image-processing,image-download --tries=3 --timeout=300
     environment:
       <<: *laravel-env
       APP_KEY: ${DISCOGS_APP_KEY}
@@ -402,6 +408,29 @@ services:
       # Корневой раздел /opt забит другими импортами. RW нужен для
       # split-xml который пишет partitions рядом с дампом.
       - /mnt/disk2:/discogs-dump
+    depends_on: [redis]
+    restart: unless-stopped
+
+  # Безымянные джобы discogs — прежде всего Laravel\Scout\Jobs\MakeSearchable
+  # и RemoveFromSearch при SCOUT_QUEUE=true. Раньше они уходили в общую с main
+  # очередь default, и main-queue разбирал их как свои: App\Models\Artist в main
+  # резолвится на дефолтный коннекшен, где таблицы artists нет, и джоба падала с
+  # «relation "artists" does not exist» — 10,4 млн строк / 39 ГБ в
+  # muzilla_main.failed_jobs за 11.06–22.09.2026. Имя очереди задаётся дефолтом
+  # config/queue.php в mz.discogs (disco-default), env здесь дублирует его явно.
+  # Отдельный сервис, а не ещё одна очередь у discogs-queue: поток переиндексации
+  # равен потоку загрузки картинок и вытеснял бы ленивую подгрузку обложек,
+  # которую пользователь ждёт на карточке.
+  discogs-queue-default:
+    logging: *default-logging
+    image: ghcr.io/nikander777/mz-discogs:${DISCOGS_TAG:-latest}
+    command: php artisan queue:work --queue=disco-default --tries=3 --timeout=120
+    environment:
+      <<: *laravel-env
+      APP_KEY: ${DISCOGS_APP_KEY}
+      APP_URL: ${DISCOGS_APP_URL}
+      DB_DATABASE: ${DISCOGS_DB_DATABASE}
+      REDIS_QUEUE: disco-default
     depends_on: [redis]
     restart: unless-stopped
 
