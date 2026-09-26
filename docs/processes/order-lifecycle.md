@@ -83,14 +83,15 @@ stateDiagram-v2
 | `GET` | `/api/orders/{order}` | `show()` | — (детали + все связи) |
 | `POST` | `/api/orders/{order}/confirm` | `confirm()` | `PENDING → CONFIRMED` (покупатель) |
 | `POST` | `/api/orders/{order}/accept` | `accept()` | `PENDING → CONFIRMED` (продавец) |
-| `POST` | `/api/orders/{order}/pay` | `pay()` | `CONFIRMED → PAID` (stub-оплата) |
 | `POST` | `/api/orders/{order}/seller-cancel` | `sellerCancel()` | `PROCESSING → CANCELLED` + возврат (пока посылка не сдана) |
 | `POST` | `/api/orders/{order}/extend-wait` | `extendWait()` | продление ожидания покупателем: `+48ч` к `shipping_deadline_at` |
 | `GET` | `/api/orders/{order}/wait-action/{action}` | `OrderWaitActionController` | подписанная ссылка из письма: `extend-wait` / `buyer-cancel` / `seller-cancel` |
 | `POST` | `/api/orders/{order}/cancel` | `cancel()` | `→ CANCELLED` (возврат склада/денег) |
 | `POST` | `/api/orders/{order}/dispute` | `dispute()` | `SHIPPED/DELIVERED → DISPUTED` |
 
-Реальная оплата приходит не через `/pay`, а вебхуком Moneta — см. [Платежи](/processes/payments-moneta).
+Оплата приходит только вебхуком Moneta — см. [Платежи](/processes/payments-moneta). Stub-эндпоинт `POST /api/orders/{order}/pay` удалён 26.09.2026: он был открыт на проде и переводил заказ в оплаченный без денег (с накладной и окном отправки для продавца).
+
+Доступ к этим эндпоинтам — только участникам заказа, решает `OrderPolicy`. Ролевые права, включая `super-admin`, на заказы не распространяются (`Gate::before` пропускает заказы мимо себя): чужой заказ смотрят в админке, `/api/admin/orders/{id}` с `can:orders.view`.
 
 ## Переходы: сервис `OrderService`
 
@@ -98,7 +99,7 @@ stateDiagram-v2
 
 | Метод | Переход | Побочный эффект |
 |---|---|---|
-| `markAsPaid()` | `CONFIRMED → PAID → PROCESSING` | `shipping_deadline_at = payment_at + 72ч`, две записи в истории; событие `OrderPaid` → создание отправления |
+| `markAsPaid()` | `CONFIRMED → PAID → PROCESSING` | `shipping_deadline_at = payment_at + 72ч`, две записи в истории; событие `OrderPaid` → создание отправления. Из кода приложения не вызывается (вебхук проводит оплату сам в `PaymentService`), используется тестами |
 | `sellerCancelOrder()` | `PROCESSING → CANCELLED` | возврат денег + отмена заявки перевозчику |
 | `promptBuyerForWaitDecision()` | — (остаётся `PROCESSING`) | ставит `wait_prompt_sent_at`, шлёт покупателю вопрос об ожидании |
 | `extendBuyerWait()` | — (остаётся `PROCESSING`) | `wait_extended_at`, `shipping_deadline_at = now + 48ч`, сброс стадии напоминаний, письмо продавцу |
