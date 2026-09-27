@@ -1,6 +1,6 @@
 # Регистрация и авторизация
 
-> Приоритет: **P1**. Актуально на 2026-07-05.
+> Приоритет: **P1**. Актуально на 2026-09-27.
 
 ## Назначение
 
@@ -14,6 +14,7 @@
 |---|---|---|
 | `POST` | `/api/auth/register/buyer` | Регистрация покупателя |
 | `POST` | `/api/auth/register/seller` | Регистрация продавца |
+| `POST` | `/api/auth/register/email/send-code` · `/verify` | Код на email до регистрации продавца (throttle 5/10 в мин.) |
 | `POST` | `/api/auth/login` | Вход по email/паролю |
 | `POST` | `/api/auth/login-by-sms` | Вход по SMS-коду |
 | `POST` | `/api/auth/phone/send-code` | Отправить код на телефон |
@@ -23,6 +24,21 @@
 | `GET` | `/api/auth/vk/redirect` · `/vk/callback` | Вход через VK ID (`web.php`) |
 
 Middleware защиты: `auth:web`, `EnsurePhoneIsVerifiedApi`. Восстановление пароля (SMS + email-код) — отдельные публичные ручки `auth/password/*`.
+
+## Подтверждённый email и согласия
+
+С 27.09.2026 подтверждённый email (`users.email_verified_at`) обязателен продавцу и для оформления заказа:
+
+- **Регистрация продавца** — в форме шаг «Подтвердите e-mail»: код уходит через `register/email/send-code` (тип `registration`, занятый или синтетический адрес → 422), `register/email/verify` помечает его подтверждённым на 24 ч. `registerSeller` без такого кода отвечает 422 (`errors.email`), с кодом — ставит `email_verified_at` и удаляет код.
+- **«Стать продавцом» из ЛК** — `become-seller` без подтверждённой почты → 403 `email_not_verified`; на `/seller/register` плашка с `EmailVerificationModal`.
+- **Оформление заказа** — `POST /api/orders/checkout` за middleware `EnsureEmailVerifiedApi` (403 `email_not_verified`); предрасчёт открыт. На `/checkout` вместо способа оплаты — блок подтверждения (`CheckoutEmailVerification`, ручки `/api/auth/email/*`).
+
+Покупатель регистрируется без подтверждения email и без города (`city` nullable). Согласия в формах:
+
+- обязательное (фронт, `required`): покупатель — Условия продажи товаров + Политика ПДн + Согласие на обработку ПДн; продавец — Политика ПДн + Согласие на обработку ПДн (плюс отдельный акцепт оферты);
+- необязательное `marketing_consent` (`/subscribe-agreement`) — `User::recordMarketingConsent()` пишет `users.marketing_consent_at/_ip` и включает `marketing_email` в настройках уведомлений.
+
+Тесты: `tests/Feature/RegistrationEmailAndConsentTest.php`.
 
 ## Вход под пользователем из админки
 
