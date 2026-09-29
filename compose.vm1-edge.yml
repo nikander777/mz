@@ -301,6 +301,9 @@ services:
       APP_KEY: ${MAIN_APP_KEY}
       APP_URL: ${MAIN_APP_URL}
       DB_DATABASE: ${MAIN_DB_DATABASE}
+      # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
+      # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
+      DB_PORT: ${MAIN_DB_PORT:-5432}
       DISCOGS_DB_HOST: ${VM3_HOST}
       DISCOGS_DB_DATABASE: ${MAIN_DISCOGS_DB_DATABASE}
       DISCOGS_DB_USERNAME: ${POSTGRES_USER}

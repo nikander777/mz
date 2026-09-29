@@ -43,6 +43,44 @@ services:
       -c ssl_cert_file=/var/lib/postgresql/data/server.crt
       -c ssl_key_file=/var/lib/postgresql/data/server.key
 
+  # Отдельный кластер для muzilla_main (с 29.09.2026). В общем кластере любой
+  # PANIC дискографии — а их было до 80 в сутки — перезапускал все процессы
+  # Postgres и рвал соединения магазина: корзина, оплата, вход. Здесь только
+  # main (~2 ГБ), поэтому памяти ему нужно на порядок меньше, а PITR (архив
+  # WAL) не тащит за собой 100 ГБ дискографии. data_checksums включены при
+  # initdb: тихая порча страниц видна при чтении, а не всплывает PANIC'ом.
+  # Сертификат SSL — тот же, что у основного кластера, в docker/postgres-main-ssl
+  # (вне git): клиенты ходят с sslmode=require.
+  postgres-main:
+    logging: *default-logging
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${MAIN_DB_DATABASE}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - pg_main_data:/var/lib/postgresql/data
+      - ./docker/postgres-main-ssl:/etc/postgresql/ssl:ro
+    ports:
+      - "${VM3_BIND:-0.0.0.0}:5433:5432"
+    shm_size: 1gb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      retries: 5
+    restart: unless-stopped
+    command: >
+      postgres
+      -c shared_buffers=4GB
+      -c effective_cache_size=12GB
+      -c max_connections=200
+      -c work_mem=32MB
+      -c maintenance_work_mem=1GB
+      -c ssl=on
+      -c ssl_cert_file=/etc/postgresql/ssl/server.crt
+      -c ssl_key_file=/etc/postgresql/ssl/server.key
+
   meilisearch:
     logging: *default-logging
     image: getmeili/meilisearch:v1.53.1
@@ -96,8 +134,8 @@ services:
     image: prodrigestivill/postgres-backup-local:17
     environment:
       POSTGRES_HOST: postgres
-      # POSTGRES_DB совпадает с MAIN_DB_DATABASE — не повторять, иначе main дампится дважды
-      POSTGRES_DB: ${MAIN_DB_DATABASE},${DISCOGS_DB_DATABASE}
+      # muzilla_main с 29.09.2026 живёт в postgres-main — его дампит pgbackups-main
+      POSTGRES_DB: ${DISCOGS_DB_DATABASE}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       # данные failed_jobs не нужны для восстановления, а битый TOAST в них дважды
@@ -112,8 +150,29 @@ services:
     depends_on: [postgres]
     restart: unless-stopped
 
+  # Локальный ночной дамп muzilla_main из отдельного кластера. Внешние копии —
+  # scripts/backup (pg-offsite.sh main).
+  pgbackups-main:
+    logging: *default-logging
+    image: prodrigestivill/postgres-backup-local:17
+    environment:
+      POSTGRES_HOST: postgres-main
+      POSTGRES_DB: ${MAIN_DB_DATABASE}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_EXTRA_OPTS: "-Z1 --exclude-table-data=failed_jobs"
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 14
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 6
+    volumes:
+      - ./backups:/backups
+    depends_on: [postgres-main]
+    restart: unless-stopped
+
 volumes:
   pg_data:
+  pg_main_data:
   # meili_data — том Meilisearch 1.6.2, выведен из эксплуатации 24.08.2026
   # (повреждённая LMDB индекса releases). Объявлен, чтобы compose не терял
   # его из виду до удаления вручную.

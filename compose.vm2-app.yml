@@ -337,6 +337,9 @@ services:
       APP_KEY: ${MAIN_APP_KEY}
       APP_URL: ${MAIN_APP_URL}
       DB_DATABASE: ${MAIN_DB_DATABASE}
+      # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
+      # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
+      DB_PORT: ${MAIN_DB_PORT:-5432}
     ports:
       - "${VM2_BIND:-0.0.0.0}:8080:8080"
     depends_on: [redis]
@@ -353,6 +356,9 @@ services:
       APP_KEY: ${MAIN_APP_KEY}
       APP_URL: ${MAIN_APP_URL}
       DB_DATABASE: ${MAIN_DB_DATABASE}
+      # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
+      # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
+      DB_PORT: ${MAIN_DB_PORT:-5432}
     depends_on: [redis]
     restart: unless-stopped
 
@@ -369,6 +375,9 @@ services:
       APP_KEY: ${MAIN_APP_KEY}
       APP_URL: ${MAIN_APP_URL}
       DB_DATABASE: ${MAIN_DB_DATABASE}
+      # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
+      # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
+      DB_PORT: ${MAIN_DB_PORT:-5432}
     depends_on: [redis]
     restart: unless-stopped
 
@@ -385,6 +394,9 @@ services:
       APP_KEY: ${MAIN_APP_KEY}
       APP_URL: ${MAIN_APP_URL}
       DB_DATABASE: ${MAIN_DB_DATABASE}
+      # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
+      # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
+      DB_PORT: ${MAIN_DB_PORT:-5432}
     depends_on: [redis]
     deploy:
       replicas: ${MAIN_MEDIA_WORKERS:-2}
@@ -399,6 +411,9 @@ services:
       APP_KEY: ${MAIN_APP_KEY}
       APP_URL: ${MAIN_APP_URL}
       DB_DATABASE: ${MAIN_DB_DATABASE}
+      # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
+      # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
+      DB_PORT: ${MAIN_DB_PORT:-5432}
     depends_on: [redis]
     restart: unless-stopped
 

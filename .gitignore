@@ -27,6 +27,7 @@ logs/
 .env.production
 .env.docker
 .env.backup
+docker/postgres-main-ssl/
 .env.bak-*
 !.env.prod.example
 !.env.docker.example

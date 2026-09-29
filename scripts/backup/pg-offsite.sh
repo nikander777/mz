@@ -24,17 +24,21 @@ JOB="pg-offsite-${1:-?}"
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 
-PG=muzilla-postgres-1
 TS=$(date -u +%Y%m%d-%H%M%S)
 
+# Контейнер кластера. main с 29.09.2026 живёт в отдельном кластере
+# (postgres-main); переключается явно через PG_MAIN_CONTAINER в .env.backup —
+# иначе при сорвавшемся переезде ночной бэкап тихо снимал бы пустую новую базу.
 case "${1:-}" in
     main)
+        PG=${PG_MAIN_CONTAINER:-muzilla-postgres-1}
         DB=muzilla_main
         PREFIX=postgres/main/daily
         KEEP=35d
         COUNT_TABLES="users orders products"
         ;;
     discogs)
+        PG=muzilla-postgres-1
         DB=muzilla_discogs
         PREFIX=postgres/discogs/weekly
         KEEP=36d
@@ -82,7 +86,7 @@ dump() {
 
     rc delete --min-age "$KEEP" "bk:$BUCKET/$PREFIX"
 
-    JOB_EXTRA="\"key\":\"$KEY\",\"bytes\":$bytes,\"counts\":{$counts}"
+    JOB_EXTRA="\"key\":\"$KEY\",\"bytes\":$bytes,\"container\":\"$PG\",\"counts\":{$counts}"
 }
 
 run_job "pg-offsite-$1" dump "$1"
