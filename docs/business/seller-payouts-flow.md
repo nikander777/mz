@@ -44,7 +44,7 @@
 | `orders` | `moneta_operation_id`, `payout_eligible_at` (конец окна удержания), `seller_payout_status` (`settled_on_account` = окно закрыто), `seller_payout_amount`, `seller_payout_at` |
 | `seller_profiles` (счёт) | `reserve_balance` (остаток счёта в НКО, кэш), `reserve_required` (неснижаемый остаток, NULL = дефолт 2000 ₽), `debt_balance`, `balance_synced_at`, `statement_synced_at`, `statement_sync_error`, `balance_mismatch`/`_since` |
 | `seller_ledger_entries` | История счёта: `source=statement` — операции выписки НКО (зачисление товара/доставки, комиссия, возврат, вывод, прочее), `source=platform` — учёт площадки (долг, корректировки). Уникальность `(moneta_operation_id, type)` |
-| `seller_withdrawals` | Заявки на вывод: `pending → processing → succeeded / failed`, `source` (seller/probe), `client_transaction`, `moneta_template_id` + `scheduled_at` (шаблон НКО), номер операции НКО |
+| `seller_withdrawals` | Заявки на вывод: `pending → processing → succeeded / failed`, `source` (seller/probe), `client_transaction`, `moneta_template_id` + `scheduled_at` (шаблон НКО), прогноз НКО `payee_amount`/`fee_amount`/`destination`, номер операции НКО |
 
 > 🔒 `payout_card_token` и `payout_setup_data` — в `$hidden` модели, наружу через API не отдаются.
 > `payout_setup_data` шифруется AES-256 через `APP_KEY` (cast `encrypted:array`).
@@ -426,49 +426,70 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
 ответ НКО: MerchantAPI v2, «Шаблоны операций на вывод средств», `CreateOperationTemplateRequest`).
 
 ```
-Продавец ──POST profile/seller/balance/withdraw {amount}──▶ SellerWithdrawalService
+Продавец ──GET profile/seller/balance/withdraw-quote?amount──▶ прогноз (в НКО ничего не создаётся)
+   те же проверки, что у вывода → FindBankAccounts (счёт юнита в НКО) → VerifyPayment
+   ← спишется, комиссия НКО, поступит, куда (банк + ****счёт), исполнение ~ближайший час
+Продавец подтверждает ──POST profile/seller/balance/withdraw {amount}──▶ SellerWithdrawalService
    1. под блокировкой профиля: канал открыт продавцу (enabled + allowed_seller_ids),
       сумма ≥ минимума и ≤ «доступно» → заявка seller_withdrawals (pending)
    2. вне транзакции БД → MonetaTemplateWithdrawalTransport:
+        FindBankAccounts {unitId} → БИК и р/с получателя (НЕ из анкеты)
+        VerifyPayment {payer=40821, payee=5, amount, isPayerAmount=true, WIRE*} → прогноз;
+          невалиден / fault / обрыв → failed, шаблон не создаётся
         CreateOperationTemplate {unitId, type=REGULAR, payer=счёт 40821, payee=5 (банк),
           tags=muzilla-withdrawal-{client_transaction},
           regularParameters: amountInfo AMOUNT {amount, isPayerAmount=true},
                              timeInfo ONCE {ближайший полный час МСК, не ближе 10 мин},
-          operationInfo: WIREBANKBIK, WIREBANKACCOUNT, WIREUSERNAME, WIREUSERINN,
+          operationInfo: WIREBANKBIK, WIREBANKACCOUNT (из НКО), WIREUSERNAME, WIREUSERINN,
                          WIREKPP (только ЮЛ), WIREPAYMENTPURPOSE,
           paymentPassword (мастер-пароль счетов 40821)}
-      → заявка processing + moneta_template_id + scheduled_at
+      → заявка processing + moneta_template_id + scheduled_at + payee_amount/fee_amount/destination
    3. НКО исполняет шаблон в scheduled_at → TrackSellerWithdrawals (каждые 10 мин):
         executionlastoperationid → succeeded, шаблон удаляется
         executionlastmessage     → failed (сумма освобождается), шаблон удаляется
    4. списание приходит в выписку → «Вывод средств» (+ «Комиссия за вывод», если НКО взяла её сверху)
 ```
 
-- `isPayerAmount=true`: со счёта списывается ровно запрошенная сумма, «доступно» не
-  превышается; комиссию банка/НКО (если есть) получатель видит меньшей суммой зачисления.
+**Проверено на проде 29.09.2026** (VerifyPayment, без проведения):
+
+- **Счёт получателя — только из НКО.** НКО выводит на банковский счёт, заведённый у юнита
+  (`FindBankAccounts`); на другие реквизиты отвечает «Неверные банковские реквизиты». У М9
+  анкета (ВТБ ****9643) и НКО (Альфа-Банк, Екатеринбургский филиал, ****2339) расходились —
+  владелец выбрал счёт из НКО, анкета приведена к нему. У остальных продавцов со счетами
+  анкета и НКО совпадают. Расхождение пишется в лог (`р/с в анкете не совпадает со счётом в НКО`).
+- **Комиссия НКО — 9 ₽ за перевод при любой сумме** (проверено от 10 ₽ до 1 000 000 ₽),
+  удерживается из переводимой суммы: `isPayerAmount=true` → со счёта уходит X, на р/с
+  поступает X − 9; в выписке 40821 одно списание X (`payerFee=0`). Сумма ≤ комиссии — fault
+  «Указанная сумма некорректна» у прогноза и «Сумма получателя задана неправильно» у шаблона
+  (так упал проверочный вывод 1 ₽). Минимум продавца (`PAYMENTS_WITHDRAWAL_MIN_AMOUNT`, 100 ₽)
+  с запасом выше комиссии.
+
+- Продавец видит прогноз до подтверждения: спишется, комиссия, поступит, банк и маска счёта,
+  ориентир исполнения. В заявке сохраняются `payee_amount`, `fee_amount`, `destination`.
 - Отказ НКО при создании шаблона → failed; ответ с ошибкой, но шаблон создан (проверка по
   метке) → запланирован; обрыв связи → исход неизвестен, заявка остаётся processing, трекер
   найдёт шаблон по метке; зависшую (час исполнения + 2 ч без исхода) поднимет сверка.
 - Сумма заявки вычитается из «доступно» (строка «Вывод в обработке»), пока НКО не исполнила
   шаблон и остаток не отразил списание.
-- В логи MerchantAPI не попадают платёжный пароль и номер расчётного счёта
-  (`MonetaPayloadSanitizer`).
+- В логи MerchantAPI не попадают платёжный пароль и номер р/с в запросе (`MonetaPayloadSanitizer`);
+  ответы MerchantAPI логируются без санитайзера — номер счёта из `FindBankAccounts` там виден.
 - Кабинет НКО — тот же, что у выписки и возвратов (`MONETA_USERNAME`, ЛК2 «Клиенты», где
   заведены счета 40821); платёжный пароль — `PAYMENTS_WITHDRAWAL_PAYMENT_PASSWORD`, пусто —
   мастер-пароль счёта-прототипа `MONETA_MERCHANT_PAYMENT_PASSWORD` (на проде 29.09 совпадает
   с паролем возвратов).
 - Переменные `PAYMENTS_WITHDRAWAL_*` проброшены в `x-laravel-env` всех compose-файлов; после
   правки `.env` контейнеры main (VM-1) и воркеров/планировщика (VM-2) нужно пересоздать.
+  Прод-образ кеширует конфиг при старте: разовый прогон с другим env — только через
+  `docker compose run --rm --no-deps -e … main php artisan …`, `exec -e` не действует.
 
 > ⚠️ **Включение.** `PAYMENTS_WITHDRAWAL_TRANSPORT=moneta_template`,
 > `PAYMENTS_WITHDRAWAL_ENABLED=true`, для постепенного включения —
 > `PAYMENTS_WITHDRAWAL_ALLOWED_SELLER_IDS` (users.id через запятую). Первый вывод —
-> проверочный на счёте площадки: `php artisan sellers:withdrawal-probe {profile} --amount=1`
-> (без `--confirm` только показывает, что уйдёт в НКО; сумма ≤ `probe_max_amount`, мимо проверки
-> доступного). Назначение платежа (`PAYMENTS_WITHDRAWAL_PAYMENT_PURPOSE`) согласовать с
-> бухгалтерией. Комиссия НКО за вывод и сроки зачисления в банк — уточняются по первому выводу.
-> Открыт вопрос, может ли продавец вывести деньги сам из кабинета МОНЕТЫ: если да, удержание
-> площадки не работает.
+> проверочный на счёте площадки: `php artisan sellers:withdrawal-probe {profile} --amount=10`
+> (без `--confirm` только показывает прогноз НКО и счёт получателя; сумма больше комиссии и
+> ≤ `probe_max_amount`, мимо проверки доступного). Назначение платежа
+> (`PAYMENTS_WITHDRAWAL_PAYMENT_PURPOSE`) согласовать с бухгалтерией. Открыт вопрос, может ли
+> продавец вывести деньги сам из кабинета МОНЕТЫ: если да, удержание площадки не работает.
 
 ## Сверка денег продавцов
 
@@ -598,7 +619,7 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
 | Окно удержания | `app/Jobs/ReleaseDeliveredOrders.php`, `app/Jobs/InitiateSellerPayout.php`, `app/Services/Payment/PayoutService.php` (развилка по драйверу), `app/Services/Seller/SellerSettlementService.php` |
 | Счёт продавца и выписка | `app/Services/Seller/SellerAccountSync.php`, `app/Services/Seller/Statement/{MerchantApiStatementClient,StatementOperation,StatementLedgerWriter}.php`, `app/Jobs/{ReconcileSellerBalances,SyncSellerAccount}.php`, `app/Listeners/SyncSellerAccountsOnMoneyEvent.php` |
 | Сверка | `app/Services/Seller/SellerFinanceAnomalies.php`, `app/Jobs/ReportSellerFinanceAnomalies.php` |
-| Вывод | `app/Services/Seller/SellerWithdrawalService.php`, `app/Contracts/Payment/SellerWithdrawalTransport.php`, `app/Services/Seller/Withdrawal/{MonetaTemplateWithdrawalTransport,MonetaWithdrawalTemplates,UnconfiguredWithdrawalTransport}.php`, `app/Jobs/TrackSellerWithdrawals.php`, `app/Console/Commands/SellerWithdrawalProbeCommand.php` |
+| Вывод | `app/Services/Seller/SellerWithdrawalService.php`, `app/Contracts/Payment/SellerWithdrawalTransport.php`, `app/Services/Seller/Withdrawal/{MonetaTemplateWithdrawalTransport,MonetaWithdrawalTemplates,WithdrawalQuote,UnconfiguredWithdrawalTransport}.php`, `app/Jobs/TrackSellerWithdrawals.php`, `app/Console/Commands/SellerWithdrawalProbeCommand.php` |
 | API счёта | `app/Http/Controllers/Api/Profile/SellerBalanceController.php`, `app/Http/Controllers/Admin/SellerFinanceController.php` |
 | Джобы онбординга | `app/Jobs/RegisterSellerInMonetaJob.php`, `ActivateMonetaUnitJob.php`, `ReconcileMonetaContractsJob.php` |
 | Модель | `app/Models/SellerProfile.php` |
