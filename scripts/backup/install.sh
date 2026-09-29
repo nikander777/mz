@@ -42,6 +42,12 @@ grep -q "^BACKUP_HOST_TAG=$ROLE$" /opt/muzilla/.env.backup || { echo "В .env.ba
 
 chmod +x "$DIR"/*.sh
 
+# На VM-3 cron не было вовсе — файл в /etc/cron.d лежал бы мёртвым грузом.
+if ! systemctl is-active --quiet cron; then
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -q cron >/dev/null
+    systemctl enable --now cron
+fi
+
 cat > "$CRON" <<EOF
 # Внешние бэкапы MUZILLA ($ROLE). Источник: scripts/backup/install.sh в репозитории mz.
 SHELL=/bin/bash
