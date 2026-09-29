@@ -80,6 +80,15 @@ x-laravel-env: &laravel-env
   PROXY_ALERT_MAX_USER_ID: ${PROXY_ALERT_MAX_USER_ID:-}
   PROXY_ALERT_MIN_WORKING: ${PROXY_ALERT_MIN_WORKING:-5}
   MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
+  # Бакет внешних бэкапов mz-backup: main-scheduler раз в час читает оттуда
+  # статусы прогонов (backups:check) и шлёт письмо, если копия провалилась
+  # или устарела. Получатель по умолчанию — PROXY_ALERT_EMAIL. Сами копии
+  # снимают скрипты scripts/backup по cron на VM-1/2/3.
+  S3_BACKUP_KEY: ${S3_BACKUP_KEY:-}
+  S3_BACKUP_SECRET: ${S3_BACKUP_SECRET:-}
+  S3_BACKUP_ENDPOINT: ${S3_BACKUP_ENDPOINT:-https://s3.twcstorage.ru}
+  S3_BACKUP_BUCKET: ${S3_BACKUP_BUCKET:-mz-backup}
+  BACKUP_ALERT_EMAIL: ${BACKUP_ALERT_EMAIL:-}
   # Image Processing
   IMAGE_DISK: ${IMAGE_DISK:-s3-media}
   IMAGE_DRIVER: ${IMAGE_DRIVER:-gd}
