@@ -44,7 +44,7 @@
 | `orders` | `moneta_operation_id`, `payout_eligible_at` (конец окна удержания), `seller_payout_status` (`settled_on_account` = окно закрыто), `seller_payout_amount`, `seller_payout_at` |
 | `seller_profiles` (счёт) | `reserve_balance` (остаток счёта в НКО, кэш), `reserve_required` (неснижаемый остаток, NULL = дефолт 2000 ₽), `debt_balance`, `balance_synced_at`, `statement_synced_at`, `statement_sync_error`, `balance_mismatch`/`_since` |
 | `seller_ledger_entries` | История счёта: `source=statement` — операции выписки НКО (зачисление товара/доставки, комиссия, возврат, вывод, прочее), `source=platform` — учёт площадки (долг, корректировки). Уникальность `(moneta_operation_id, type)` |
-| `seller_withdrawals` | Заявки на вывод: `pending → processing → succeeded / failed`, `client_transaction`, номер операции НКО |
+| `seller_withdrawals` | Заявки на вывод: `pending → processing → succeeded / failed`, `source` (seller/probe), `client_transaction`, `moneta_template_id` + `scheduled_at` (шаблон НКО), номер операции НКО |
 
 > 🔒 `payout_card_token` и `payout_setup_data` — в `$hidden` модели, наружу через API не отдаются.
 > `payout_setup_data` шифруется AES-256 через `APP_KEY` (cast `encrypted:array`).
@@ -61,7 +61,7 @@
    → Заказ → оплата → агрегатор сразу расщепляет платёж:
         товар — на счёт 40821 продавца, доставка — на счёт площадки
    → Окно удержания (17 дней от вручения / 24 от отправки) → деньги доступны к выводу
-   → Вывод со счёта 40821 на реквизиты — только через ЛК Muzilla (пока выключен)
+   → Вывод со счёта 40821 на расчётный счёт — по кнопке в ЛК Muzilla, разовым шаблоном НКО
 ```
 
 Заводить лоты продавец может сразу после регистрации — ждать одобрения
@@ -422,18 +422,53 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
 - **Вывод в обработке** — заявки `pending`/`processing` и успешные, которые остаток НКО
   ещё не отразил (завершены после `balance_synced_at`).
 
-**Вывод средств.** `POST /api/profile/seller/balance/withdraw` → `SellerWithdrawalService`:
-под блокировкой строки профиля проверяет доступное и заводит заявку `pending`, затем
-**вне транзакции БД** обращается к НКО (`SellerWithdrawalTransport`): ответ → `succeeded`
-/ `failed`, неясный исход (таймаут) → заявка остаётся `processing`, сумма — вычтенной
-(повторять перевод нельзя). Проводку списания приносит выписка.
+**Вывод средств — по кнопке продавца, разовым шаблоном НКО** (решение 29.09.2026; механизм —
+ответ НКО: MerchantAPI v2, «Шаблоны операций на вывод средств», `CreateOperationTemplateRequest`).
 
-> ⚠️ **Вывод выключен** (`PAYMENTS_WITHDRAWAL_ENABLED=false`), транспорт не реализован
-> (`UnconfiguredWithdrawalTransport` отказывает явно). По документации НКО площадка
-> управляет счетами клиентов запросом MerchantAPI `PaymentRequest`, но формат, пароль
-> подписи, комиссию и сроки НКО выдаёт под проект — их нужно запросить. Открыт и вопрос,
-> может ли продавец вывести деньги сам из кабинета МОНЕТЫ: если да, удержание площадки
-> не работает.
+```
+Продавец ──POST profile/seller/balance/withdraw {amount}──▶ SellerWithdrawalService
+   1. под блокировкой профиля: канал открыт продавцу (enabled + allowed_seller_ids),
+      сумма ≥ минимума и ≤ «доступно» → заявка seller_withdrawals (pending)
+   2. вне транзакции БД → MonetaTemplateWithdrawalTransport:
+        CreateOperationTemplate {unitId, type=REGULAR, payer=счёт 40821, payee=5 (банк),
+          tags=muzilla-withdrawal-{client_transaction},
+          regularParameters: amountInfo AMOUNT {amount, isPayerAmount=true},
+                             timeInfo ONCE {ближайший полный час МСК, не ближе 10 мин},
+          operationInfo: WIREBANKBIK, WIREBANKACCOUNT, WIREUSERNAME, WIREUSERINN,
+                         WIREKPP (только ЮЛ), WIREPAYMENTPURPOSE,
+          paymentPassword (мастер-пароль счетов 40821)}
+      → заявка processing + moneta_template_id + scheduled_at
+   3. НКО исполняет шаблон в scheduled_at → TrackSellerWithdrawals (каждые 10 мин):
+        executionlastoperationid → succeeded, шаблон удаляется
+        executionlastmessage     → failed (сумма освобождается), шаблон удаляется
+   4. списание приходит в выписку → «Вывод средств» (+ «Комиссия за вывод», если НКО взяла её сверху)
+```
+
+- `isPayerAmount=true`: со счёта списывается ровно запрошенная сумма, «доступно» не
+  превышается; комиссию банка/НКО (если есть) получатель видит меньшей суммой зачисления.
+- Отказ НКО при создании шаблона → failed; ответ с ошибкой, но шаблон создан (проверка по
+  метке) → запланирован; обрыв связи → исход неизвестен, заявка остаётся processing, трекер
+  найдёт шаблон по метке; зависшую (час исполнения + 2 ч без исхода) поднимет сверка.
+- Сумма заявки вычитается из «доступно» (строка «Вывод в обработке»), пока НКО не исполнила
+  шаблон и остаток не отразил списание.
+- В логи MerchantAPI не попадают платёжный пароль и номер расчётного счёта
+  (`MonetaPayloadSanitizer`).
+- Кабинет НКО — тот же, что у выписки и возвратов (`MONETA_USERNAME`, ЛК2 «Клиенты», где
+  заведены счета 40821); платёжный пароль — `PAYMENTS_WITHDRAWAL_PAYMENT_PASSWORD`, пусто —
+  мастер-пароль счёта-прототипа `MONETA_MERCHANT_PAYMENT_PASSWORD` (на проде 29.09 совпадает
+  с паролем возвратов).
+- Переменные `PAYMENTS_WITHDRAWAL_*` проброшены в `x-laravel-env` всех compose-файлов; после
+  правки `.env` контейнеры main (VM-1) и воркеров/планировщика (VM-2) нужно пересоздать.
+
+> ⚠️ **Включение.** `PAYMENTS_WITHDRAWAL_TRANSPORT=moneta_template`,
+> `PAYMENTS_WITHDRAWAL_ENABLED=true`, для постепенного включения —
+> `PAYMENTS_WITHDRAWAL_ALLOWED_SELLER_IDS` (users.id через запятую). Первый вывод —
+> проверочный на счёте площадки: `php artisan sellers:withdrawal-probe {profile} --amount=1`
+> (без `--confirm` только показывает, что уйдёт в НКО; сумма ≤ `probe_max_amount`, мимо проверки
+> доступного). Назначение платежа (`PAYMENTS_WITHDRAWAL_PAYMENT_PURPOSE`) согласовать с
+> бухгалтерией. Комиссия НКО за вывод и сроки зачисления в банк — уточняются по первому выводу.
+> Открыт вопрос, может ли продавец вывести деньги сам из кабинета МОНЕТЫ: если да, удержание
+> площадки не работает.
 
 ## Сверка денег продавцов
 
@@ -448,7 +483,7 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
 | `balance_mismatch` | остаток НКО ≠ сумма выписки дольше 2 ч | — |
 | `sync_failed` / `sync_stale` | выписка не грузится / не обновлялась дольше 3 ч | VM-2 без `MONETA_*` (09.09) |
 | `undelivered_not_refunded` | посылка вернулась, деньги покупателю не возвращены | 2999 |
-| `withdrawal_stuck` | заявка на вывод без ответа НКО дольше 30 мин | — |
+| `withdrawal_stuck` | вывод без исхода: шаблон должен был исполниться 2+ ч назад (или не создан 30+ мин) | — |
 
 ---
 
@@ -563,7 +598,7 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
 | Окно удержания | `app/Jobs/ReleaseDeliveredOrders.php`, `app/Jobs/InitiateSellerPayout.php`, `app/Services/Payment/PayoutService.php` (развилка по драйверу), `app/Services/Seller/SellerSettlementService.php` |
 | Счёт продавца и выписка | `app/Services/Seller/SellerAccountSync.php`, `app/Services/Seller/Statement/{MerchantApiStatementClient,StatementOperation,StatementLedgerWriter}.php`, `app/Jobs/{ReconcileSellerBalances,SyncSellerAccount}.php`, `app/Listeners/SyncSellerAccountsOnMoneyEvent.php` |
 | Сверка | `app/Services/Seller/SellerFinanceAnomalies.php`, `app/Jobs/ReportSellerFinanceAnomalies.php` |
-| Вывод | `app/Services/Seller/SellerWithdrawalService.php`, `app/Contracts/Payment/SellerWithdrawalTransport.php`, `app/Services/Seller/Withdrawal/UnconfiguredWithdrawalTransport.php` |
+| Вывод | `app/Services/Seller/SellerWithdrawalService.php`, `app/Contracts/Payment/SellerWithdrawalTransport.php`, `app/Services/Seller/Withdrawal/{MonetaTemplateWithdrawalTransport,MonetaWithdrawalTemplates,UnconfiguredWithdrawalTransport}.php`, `app/Jobs/TrackSellerWithdrawals.php`, `app/Console/Commands/SellerWithdrawalProbeCommand.php` |
 | API счёта | `app/Http/Controllers/Api/Profile/SellerBalanceController.php`, `app/Http/Controllers/Admin/SellerFinanceController.php` |
 | Джобы онбординга | `app/Jobs/RegisterSellerInMonetaJob.php`, `ActivateMonetaUnitJob.php`, `ReconcileMonetaContractsJob.php` |
 | Модель | `app/Models/SellerProfile.php` |
