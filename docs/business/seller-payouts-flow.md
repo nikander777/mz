@@ -2,7 +2,7 @@
 
 > Каноничный документ по жизненному циклу продавца MUZILLA: кто что заполняет,
 > куда летят данные, как устроены выплаты и что делать, если что-то пошло не так.
-> Актуально на 2026-08-31.
+> Актуально на 2026-09-29.
 
 ## Содержание
 
@@ -13,12 +13,14 @@
 5. [Этап 2. Витрина](#этап-2-витрина)
 6. [Этап 3a. Подключение выплат — физлицо](#этап-3a-подключение-выплат--физлицо-individual)
 7. [Этап 3b. Подключение выплат — ЮЛ/ИП](#этап-3b-подключение-выплат--юл--ип)
-8. [Этап 4. Заказ → оплата](#этап-4-заказ--оплата-деньги-на-транзит)
-9. [Этап 5. Выплата продавцу](#этап-5-выплата-продавцу)
-10. [Статусы и блокировка](#статусы-и-блокировка)
-11. [Что делать, если что-то пошло не так](#что-делать-если-что-то-пошло-не-так)
-12. [Инструменты поддержки](#инструменты-поддержки)
-13. [Ключевые файлы](#ключевые-файлы)
+8. [Этап 4. Заказ → оплата](#этап-4-заказ--оплата-деньги-сразу-на-счёте-продавца)
+9. [Этап 5. Окно удержания](#этап-5-окно-удержания)
+10. [Этап 6. Счёт продавца, история и вывод](#этап-6-счёт-продавца-история-и-вывод)
+11. [Сверка денег продавцов](#сверка-денег-продавцов)
+12. [Статусы и блокировка](#статусы-и-блокировка)
+13. [Что делать, если что-то пошло не так](#что-делать-если-что-то-пошло-не-так)
+14. [Инструменты поддержки](#инструменты-поддержки)
+15. [Ключевые файлы](#ключевые-файлы)
 
 ---
 
@@ -28,8 +30,8 @@
 |---|---|
 | **Продавец** | Заполняет профиль, реквизиты выплат, подписывает оферту |
 | **Покупатель** | Оплачивает заказ, подтверждает получение |
-| **Платформа** (Laravel `main`) | Хранит данные, оркестрирует онбординг, инициирует выплаты |
-| **НКО МОНЕТА** | Платёжный провайдер: транзитный счёт, регистрация ЮЛ/ИП, договор, выплаты |
+| **Платформа** (Laravel `main`) | Хранит данные, оркестрирует онбординг, держит срок удержания, ведёт учёт по счёту продавца, инициирует вывод |
+| **НКО МОНЕТА / касса ПА** | Платёжный провайдер: регистрация ЮЛ/ИП, договор, счета 40821, расщепление платежа на счета получателей, возвраты |
 | **DaData** | Автозаполнение по ИНН из ЕГРЮЛ/ЕГРИП |
 | **Поддержка** (админка) | Ручное управление онбордингом через `Admin\MonetaSellerController` |
 
@@ -39,7 +41,10 @@
 |---|---|
 | `users` | ФИО, `username`, `city`, `email`, `phone`, `is_seller`, `registration_type`, аватар + **витрина**: `description`, `contacts`, `delivery_payment`, `standard_description`, `auto_message` |
 | `seller_profiles` | **Идентификация:** `legal_form`, `inn`, `company_name`, `company_legal_form`, `kpp`, `ogrn`, `ogrnip`, `legal_address`, `jurisdiction`, `date_of_birth` · **НКО:** `moneta_unit_id`, `moneta_account_id`, `moneta_contract_status`, `agreement_signed_at`, `agreement_doc_path`, `moneta_synced_at` · **ФЛ-выплаты:** `payout_method`, `payout_card_token` (🔒hidden), `payout_card_mask`, `payout_sbp_phone`, `payout_sbp_bank_id`, `self_employed_confirmed_at` · **Анкета:** `payout_setup_data` (🔒AES-encrypted: паспорт, банк, согласия) |
-| `orders` | `moneta_operation_id`, `seller_payout_status`, `seller_payout_amount`, `seller_payout_at`, `seller_payout_id` |
+| `orders` | `moneta_operation_id`, `payout_eligible_at` (конец окна удержания), `seller_payout_status` (`settled_on_account` = окно закрыто), `seller_payout_amount`, `seller_payout_at` |
+| `seller_profiles` (счёт) | `reserve_balance` (остаток счёта в НКО, кэш), `reserve_required` (неснижаемый остаток, NULL = дефолт 2000 ₽), `debt_balance`, `balance_synced_at`, `statement_synced_at`, `statement_sync_error`, `balance_mismatch`/`_since` |
+| `seller_ledger_entries` | История счёта: `source=statement` — операции выписки НКО (зачисление товара/доставки, комиссия, возврат, вывод, прочее), `source=platform` — учёт площадки (долг, корректировки). Уникальность `(moneta_operation_id, type)` |
+| `seller_withdrawals` | Заявки на вывод: `pending → processing → succeeded / failed`, `client_transaction`, номер операции НКО |
 
 > 🔒 `payout_card_token` и `payout_setup_data` — в `$hidden` модели, наружу через API не отдаются.
 > `payout_setup_data` шифруется AES-256 через `APP_KEY` (cast `encrypted:array`).
@@ -53,8 +58,10 @@
    → ⛔ ГЕЙТ: без опубликованного лота форма подключения выплат закрыта
    → Подключение выплат (ЮЛ/ИП: онбординг в НКО + договор)
    → ⛔ ГЕЙТ: пока анкету не одобрила НКО, лоты продавца НЕ ВИДНЫ в каталоге
-   → Заказ → оплата → деньги на транзитном счёте платформы
-   → Подтверждение получения покупателем → выплата продавцу
+   → Заказ → оплата → агрегатор сразу расщепляет платёж:
+        товар — на счёт 40821 продавца, доставка — на счёт площадки
+   → Окно удержания (17 дней от вручения / 24 от отправки) → деньги доступны к выводу
+   → Вывод со счёта 40821 на реквизиты — только через ЛК Muzilla (пока выключен)
 ```
 
 Заводить лоты продавец может сразу после регистрации — ждать одобрения
@@ -331,35 +338,117 @@ accept-conditions (CONDITIONS_CORRECT_DATA=Y) ──▶ МОНЕТА
 
 ---
 
-## Этап 4. Заказ → оплата (деньги на транзит)
+## Этап 4. Заказ → оплата (деньги сразу на счёте продавца)
+
+Касса платёжного агрегатора (драйвер `bpa`, прод с 31.08.2026) **расщепляет платёж
+сама** — транзитного счёта платформы, с которого потом «выплачивают», в этой схеме нет.
 
 ```
-Покупатель оплачивает заказ
-   → деньги падают на ТРАНЗИТНЫЙ СЧЁТ платформы в МОНЕТА
-   → orders.moneta_operation_id фиксирует операцию
-   (деньги «висят» на транзите, пока заказ не завершён и продавец не готов)
+Покупатель оплачивает заказ (СБП — сразу; карта — холд, списание при приёмке посылки СДЭК)
+   → агрегатор создаёт по операции зачисления на каждую строку счёта:
+        MZ{order}I{item} — товар  → на счёт 40821 продавца (moneta_account_id),
+                                    за вычетом комиссии (маржа площадки + эквайринг + фискализация)
+        MZ{order}D       — доставка → на счёт площадки (PAYMENTS_PLATFORM_ACCOUNT),
+                                    за вычетом эквайринга
+   → orders.moneta_operation_id = операция оплаты (родитель зачислений)
 ```
 
-## Этап 5. Выплата продавцу
+> ⚠️ **Счёт площадки = счёт продавца ООО «М9»** (78341566, магазин team@muzilla.ru).
+> Отдельного счёта под доставку не будет (решение 29.09.2026), поэтому в истории М9
+> видны доставки **всех** заказов маркетплейса — строкой «Оплата доставки · Доставка ·
+> Заказ N», а по своим заказам М9 — и товар, и доставка.
 
-**Триггер:** покупатель подтвердил получение → событие `OrderCompleted` → джоба **`InitiateSellerPayout`** (очередь, **3 попытки**, backoff 10/60/300 с).
+Возврат идёт обратным путём: `RefundRequest` по операциям **зачисления** — со счёта
+продавца (товар) и со счёта площадки (доставка). Агрегатор списывает полную сумму строки,
+а зачислено было за вычетом комиссии, — разница (комиссия) при отмене теряется
+получателем. Кто её несёт — открытый вопрос владельца (29.09.2026).
+
+## Этап 5. Окно удержания
+
+Деньги уже на счёте продавца, но **к выводу закрыты**, пока покупатель может вернуть
+товар или открыть спор: `payout_eligible_at = min(shipped_at + 24д, delivered_at + 17д)`.
 
 ```
-InitiateSellerPayout → PayoutService::initiateSellerPayout(order)
-   1. calculateSellerAmount(order)              // минус комиссия платформы
-   2. assertCanPayout(profile):
-        ЮЛ/ИП → должен быть isMonetaActive (contract=active + moneta_account_id)
-        ФЛ    → выбран payout_method + реквизиты (card_token | sbp_phone+bank)
-   3. seller_payout_status: pending → processing
-   4. dispatchPayout(profile):
-        ЮЛ/ИП ──payoutToSeller(operationId, moneta_account_id, amount)──▶ МОНЕТА (счёт→счёт)
-        ФЛ CARD ──payoutToCard(operationId, card_token, amount)──▶ МОНЕТА (C2C на карту)
-        ФЛ SBP  ──payoutToSbp(operationId, sbp_phone, sbp_bank_id, amount)──▶ МОНЕТА (C2C по СБП)
-   5. успех  → status=completed, seller_payout_at, seller_payout_id
-      неудача → status=failed (джоба ретраит; после 3 — failed() логирует)
+ReleaseDeliveredOrders (ежечасно): окно истекло, спора и активного возврата нет,
+                                   доставка не returned/cancelled/error
+   → InitiateSellerPayout → PayoutService::initiateSellerPayout
+        касса агрегатора → SellerSettlementService::settleOrder:
+            seller_payout_status = settled_on_account («окно закрыто»),
+            seller_payout_amount = фактически зачисленное по выписке (без выписки — расчётное)
+            проводок НЕ пишет: движение денег уже в истории из выписки
+        историческая схема (moneta) → перевод с транзита, как раньше
+   → письмо продавцу «Средства по заказу № … больше не удерживаются»
 ```
 
-Деньги уходят **с транзитного счёта** на счёт/карту продавца. Если продавец не готов — `assertCanPayout` бросает, деньги ждут на транзите, выплату можно переинициировать (разрешено из `null`/`failed`).
+Посылка, которую СДЭК вернул (`NOT_DELIVERED` «Не вручен» → `delivery_status=returned`),
+окно не закрывает никогда: выплата по ней заблокирована, а сверка поднимает заказ как
+«деньги покупателю не возвращены».
+
+## Этап 6. Счёт продавца, история и вывод
+
+Раздел «Финансы» (`/seller/finances`) и «Счёт и вывод средств» (`/seller/balance`).
+
+**Остаток и история из одного источника.** «На счёте» — остаток счёта 40821 из НКО
+(`FindAccountById`), «История операций» — выписка того же счёта (`FindOperationsList`),
+перенесённая в `seller_ledger_entries`. Сумма проводок выписки **равна** остатку — это
+главное равенство раздела; расхождение фиксируется на профиле и уходит в сверку.
+
+| Операция выписки | Проводки в истории |
+|---|---|
+| Зачисление товара `MZ{order}I{item}` | «Продажа» (полная сумма строки, позиция = название товара) + «Комиссия площадки» |
+| Зачисление доставки `MZ{order}D` | «Оплата доставки» (позиция «Доставка») + «Комиссия эквайринга за доставку» |
+| Возврат (`isrefund`) | «Возврат покупателю» — заказ и позиция от операции зачисления, которую он возвращает |
+| Списание по нашей заявке на вывод | «Вывод средств» |
+| Всё остальное | «Операция по счёту» без заказа — попадает в сверку |
+
+Плюс проводки площадки, которых в НКО нет: обратная доставка, перевыставленная комиссия
+агента (долг продавца) и ручные корректировки администратора.
+
+**Когда история обновляется:** ежечасно по всем счетам (`ReconcileSellerBalances`) и через
+`payments.statement.sync_delay_seconds` (180 с) после оплаты, отправки и возврата по заказу
+(`SyncSellerAccount`, слушатель `SyncSellerAccountsOnMoneyEvent`). Выписка берётся с
+перекрытием 48 ч от прошлой синхронизации (операции НКО проводит не мгновенно), перенос
+идемпотентен. Лимит НКО — период запроса не длиннее 30 дней, клиент режет на окна.
+
+**Доступно к выводу:**
+
+```
+доступно = остаток − неснижаемый остаток (2000 ₽) − долг − ожидает срока − вывод в обработке
+```
+
+- **Ожидает срока** — сумма проводок выписки по заказам, окно которых не закрыто
+  (`seller_payout_status` не `settled_on_account`/`completed`), включая отменённые, но не
+  возвращённые: это деньги покупателя;
+- **Вывод в обработке** — заявки `pending`/`processing` и успешные, которые остаток НКО
+  ещё не отразил (завершены после `balance_synced_at`).
+
+**Вывод средств.** `POST /api/profile/seller/balance/withdraw` → `SellerWithdrawalService`:
+под блокировкой строки профиля проверяет доступное и заводит заявку `pending`, затем
+**вне транзакции БД** обращается к НКО (`SellerWithdrawalTransport`): ответ → `succeeded`
+/ `failed`, неясный исход (таймаут) → заявка остаётся `processing`, сумма — вычтенной
+(повторять перевод нельзя). Проводку списания приносит выписка.
+
+> ⚠️ **Вывод выключен** (`PAYMENTS_WITHDRAWAL_ENABLED=false`), транспорт не реализован
+> (`UnconfiguredWithdrawalTransport` отказывает явно). По документации НКО площадка
+> управляет счетами клиентов запросом MerchantAPI `PaymentRequest`, но формат, пароль
+> подписи, комиссию и сроки НКО выдаёт под проект — их нужно запросить. Открыт и вопрос,
+> может ли продавец вывести деньги сам из кабинета МОНЕТЫ: если да, удержание площадки
+> не работает.
+
+## Сверка денег продавцов
+
+`SellerFinanceAnomalies` (админка «Финансы», бейдж «Требует внимания», дайджест
+`ReportSellerFinanceAnomalies` раз в 6 ч супер-админам и админам при изменении состава):
+
+| Тип | Что значит | Живой пример |
+|---|---|---|
+| `cancelled_not_refunded` | заказ отменён, по выписке деньги остались на счетах | 2993 (возврат упал 08.09) |
+| `payment_not_recorded` | зачисление по заказу есть, а оплата в заказе не проведена | 2956 (`payment_status=processing`) |
+| `unmatched_operation` | операция по счёту без заказа | — |
+| `balance_mismatch` | остаток НКО ≠ сумма выписки дольше 2 ч | — |
+| `sync_failed` / `sync_stale` | выписка не грузится / не обновлялась дольше 3 ч | VM-2 без `MONETA_*` (09.09) |
+| `undelivered_not_refunded` | посылка вернулась, деньги покупателю не возвращены | 2999 |
+| `withdrawal_stuck` | заявка на вывод без ответа НКО дольше 30 мин | — |
 
 ---
 
@@ -392,11 +481,15 @@ InitiateSellerPayout → PayoutService::initiateSellerPayout(order)
 | 2 | Опечатка обнаружена **после** отправки/активации (`verifying`/`active`) | 403 на запись | Продавец подаёт **заявку на изменение** (см. ниже); после согласования данные вносит **поддержка** (`MonetaSellerController`): `check` → `fill-*`/`attach-*`; при сильном расхождении — `register` заново |
 | 3 | Смена юр.формы (ФЛ↔ИП↔ЮЛ) | Read-only (мы закрыли «тихую» смену) | **Поддержка**: новая регистрация юнита + новое заявление |
 | 4 | Заявление не дошло в НКО за 30 дней | НКО → `blocked` | **Поддержка/НКО**: повторная подача / `register` |
-| 5 | НКО заблокировала юнит (`blocked`) | `assertCanPayout` бросает, выплаты невозможны | Разбор с НКО; деньги копятся на транзите |
+| 5 | НКО заблокировала юнит (`blocked`) | Продажи закрыты гейтом, деньги прежних заказов остаются на счёте 40821 | Разбор с НКО |
 | 6 | У ФЛ протухла/перевыпущена карта, сменился банк СБП | `editable=true` (самообслуживание) | **Продавец сам** перепривязывает карту / меняет СБП |
-| 7 | Выплата по заказу упала (`failed`) | 3 ретрая (10/60/300с), затем лог | После починки реквизитов — переинициировать выплату |
+| 7 | Закрытие окна по заказу упало | `InitiateSellerPayout`: 3 ретрая (10/60/300 с), затем лог; `ReleaseDeliveredOrders` подберёт заказ снова (`seller_payout_status IS NULL`) | Само; при повторах — лог джобы |
 | 8 | Самозанятый ФЛ не подтвердил статус (54-ФЗ) | Налоговые риски при C2C | Подтвердить в «Подключение выплат» |
 | 9 | Удаление профиля с активным договором | `deleteProfile` чистит профиль, `is_seller=false`, **юнит в НКО не закрывает** | ⚠️ Открытый вопрос — ручное закрытие через поддержку (см. бэклог) |
+| 10 | Заказ отменён, деньги остались на счетах (возврат не запускался или упал) | Сверка: «Заказ отменён, деньги покупателю не возвращены»; деньги заморожены у продавца | **Поддержка**: возврат из админки заказа (`POST admin/orders/{order}/refund`) |
+| 11 | Оплата пришла на счёт, а заказ её не видит (`payment_status` ≠ completed) | Сверка: «Оплата пришла на счёт, но в заказе не проведена» | **Поддержка**: разобрать заказ; сверка платежей такой заказ уже не подберёт |
+| 12 | Остаток счёта не сходится с историей / выписка не грузится | Сверка: `balance_mismatch` дольше 2 ч или `sync_failed`/`sync_stale` | Проверить `MONETA_*` на VM-2 (синхронизация идёт воркерами), затем «Синхронизировать» в карточке или `sellers:sync-accounts --profile=ID` |
+| 13 | Посылка не вручена (СДЭК `NOT_DELIVERED`) | `delivery_status=returned`, выплата не разблокируется; сверка: «Посылка не вручена, деньги покупателю не возвращены» | **Поддержка**: решение по заказу и возврат покупателю |
 
 > Сценарий №6 закрыт доработкой: для ФЛ реквизиты выплат самообслуживаемы в любом статусе.
 > №9 — в бэклоге, пока не делаем.
@@ -438,6 +531,20 @@ InitiateSellerPayout → PayoutService::initiateSellerPayout(order)
 
 Через них поддержка исправляет/переоформляет онбординг продавца, когда самообслуживание заблокировано.
 
+Финансы продавцов — `Admin\SellerFinanceController` (право `finance.view`, корректировка — `finance.payouts`):
+
+| Ручка | Что делает |
+|---|---|
+| `GET /api/admin/finance/sellers` | счета продавцов: остаток, «ожидает срока», резерв, долг, доступно, состояние синхронизации |
+| `GET /api/admin/finance/anomalies` | сверка (см. «Сверка денег продавцов») |
+| `GET /api/admin/sellers/{sellerProfile}/finance` | счёт продавца + его расхождения + последние заявки на вывод |
+| `GET …/finance/ledger?type=&period=&source=` | история счёта с номером операции НКО и атрибутами выписки |
+| `POST …/finance/sync` | подтянуть выписку и остаток сейчас |
+| `POST …/finance/adjustments` `{amount, reason}` | корректировка долга: «−» добавляет, «+» гасит; в журнал действий |
+
+Консоль: `php artisan sellers:sync-accounts [--profile=ID] [--since=Y-m-d] [--rebuild]` —
+догрузить выписку или пересобрать историю из НКО (учёт площадки не трогается).
+
 Налоговые данные для чека — `Admin\SellerController::updateTax`
 (`PATCH /api/admin/sellers/{sellerProfile}/tax`, право `sellers.edit`): система
 налогообложения и ставка НДС, см. «Шаг 0.5».
@@ -453,9 +560,14 @@ InitiateSellerPayout → PayoutService::initiateSellerPayout(order)
 | НКО MerchantAPI | `app/Services/Payment/MonetaMerchantApiService.php` |
 | Вебхуки НКО | `app/Http/Controllers/Api/Webhook/MonetaMerchantWebhookController.php` |
 | Привязка карты ФЛ | `app/Services/Payment/PaymentService.php` (`handleSellerCardBindingWebhook`) |
-| Выплаты | `app/Services/Payment/PayoutService.php`, `app/Jobs/InitiateSellerPayout.php` |
+| Окно удержания | `app/Jobs/ReleaseDeliveredOrders.php`, `app/Jobs/InitiateSellerPayout.php`, `app/Services/Payment/PayoutService.php` (развилка по драйверу), `app/Services/Seller/SellerSettlementService.php` |
+| Счёт продавца и выписка | `app/Services/Seller/SellerAccountSync.php`, `app/Services/Seller/Statement/{MerchantApiStatementClient,StatementOperation,StatementLedgerWriter}.php`, `app/Jobs/{ReconcileSellerBalances,SyncSellerAccount}.php`, `app/Listeners/SyncSellerAccountsOnMoneyEvent.php` |
+| Сверка | `app/Services/Seller/SellerFinanceAnomalies.php`, `app/Jobs/ReportSellerFinanceAnomalies.php` |
+| Вывод | `app/Services/Seller/SellerWithdrawalService.php`, `app/Contracts/Payment/SellerWithdrawalTransport.php`, `app/Services/Seller/Withdrawal/UnconfiguredWithdrawalTransport.php` |
+| API счёта | `app/Http/Controllers/Api/Profile/SellerBalanceController.php`, `app/Http/Controllers/Admin/SellerFinanceController.php` |
 | Джобы онбординга | `app/Jobs/RegisterSellerInMonetaJob.php`, `ActivateMonetaUnitJob.php`, `ReconcileMonetaContractsJob.php` |
 | Модель | `app/Models/SellerProfile.php` |
 | Поддержка (админ) | `app/Http/Controllers/Admin/MonetaSellerController.php` |
 | Заявки на изменение | `app/Models/SellerChangeRequest.php`, `app/Services/Seller/SellerChangeRequestService.php`, `app/Http/Controllers/{Api/Profile,Admin}/SellerChangeRequestController.php` |
-| Фронт продавца | `nuxt/pages/seller/index.vue`, `nuxt/pages/seller/payout-setup/index.vue`, `nuxt/pages/seller/payout-setup/change-request.vue`, `nuxt/components/payout/SetupFormFields.vue` |
+| Фронт продавца | `nuxt/pages/seller/index.vue`, `nuxt/pages/seller/payout-setup/index.vue`, `nuxt/pages/seller/payout-setup/change-request.vue`, `nuxt/components/payout/SetupFormFields.vue`, `nuxt/pages/seller/{finances,balance}.vue` |
+| Фронт админки | `nuxt/pages/admin/finance/index.vue`, блок «Финансы» в `nuxt/pages/admin/sellers/[id].vue`, `nuxt/composables/useAdminFinance.ts` |
