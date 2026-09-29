@@ -26,6 +26,8 @@ logs/
 .env.local
 .env.production
 .env.docker
+.env.backup
+.env.bak-*
 !.env.prod.example
 !.env.docker.example
 

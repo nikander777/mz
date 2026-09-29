@@ -96,9 +96,13 @@ services:
     image: prodrigestivill/postgres-backup-local:17
     environment:
       POSTGRES_HOST: postgres
-      POSTGRES_DB: ${POSTGRES_DB},${MAIN_DB_DATABASE},${DISCOGS_DB_DATABASE}
+      # POSTGRES_DB совпадает с MAIN_DB_DATABASE — не повторять, иначе main дампится дважды
+      POSTGRES_DB: ${MAIN_DB_DATABASE},${DISCOGS_DB_DATABASE}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # данные failed_jobs не нужны для восстановления, а битый TOAST в них дважды
+      # обрывал дамп целиком (22.09 main, 29.09 discogs); схема таблицы остаётся
+      POSTGRES_EXTRA_OPTS: "-Z1 --exclude-table-data=failed_jobs"
       SCHEDULE: "@daily"
       BACKUP_KEEP_DAYS: 14
       BACKUP_KEEP_WEEKS: 4
