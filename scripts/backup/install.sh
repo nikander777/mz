@@ -8,7 +8,10 @@
 # BACKUP_ENV_PASSPHRASE (см. docs/deployment/backups.md).
 #
 # Время — UTC. Ночные локальные дампы pgbackups идут в 00:00, поэтому внешние
-# начинаются с 01:30, а проверка на VM-2 — через час после дампа.
+# начинаются с 01:30. Всё тяжёлое (проверка восстановлением, синхронизация
+# файлов) — на VM-3: там 128 ГБ памяти, 16 потоков и ночью почти нет нагрузки.
+# VM-2 — обычная VDS, её CPU целиком занят воркерами очередей; на ней и на VM-1
+# только копия собственного .env (секунды).
 
 set -euo pipefail
 
@@ -19,14 +22,14 @@ CRON=/etc/cron.d/muzilla-backup
 case "$ROLE" in
     vm3)
         JOBS="30 1 * * * root flock -n /run/mzb-pg-main.lock $DIR/pg-offsite.sh main
+0 2 * * * root flock -n /run/mzb-verify-main.lock $DIR/verify-offsite.sh main
 30 2 * * 0 root flock -n /run/mzb-pg-discogs.lock $DIR/pg-offsite.sh discogs
+30 4 * * 0 root flock -n /run/mzb-verify-discogs.lock $DIR/verify-offsite.sh discogs
+0 4 * * * root flock -n /run/mzb-files.lock $DIR/files-offsite.sh
 40 3 * * * root $DIR/env-offsite.sh"
         ;;
     vm2)
-        JOBS="30 2 * * * root flock -n /run/mzb-verify-main.lock $DIR/verify-offsite.sh main
-0 6 * * 0 root flock -n /run/mzb-verify-discogs.lock $DIR/verify-offsite.sh discogs
-0 4 * * * root flock -n /run/mzb-files.lock $DIR/files-offsite.sh
-40 3 * * * root $DIR/env-offsite.sh"
+        JOBS="40 3 * * * root $DIR/env-offsite.sh"
         ;;
     vm1)
         JOBS="40 3 * * * root $DIR/env-offsite.sh"
