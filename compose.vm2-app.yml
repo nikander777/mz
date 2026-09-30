@@ -117,6 +117,9 @@ x-laravel-env: &laravel-env
   MAIL_ENCRYPTION: ${MAIL_ENCRYPTION:-tls}
   MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-noreply@muzilla.ru}
   MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Muzilla}
+  # Служебные дайджесты (сверка денег, зависшие отправления): если задано —
+  # только на эти адреса (через запятую), а не всем с ролями admin/support.
+  MAIL_INTERNAL_RECIPIENTS: ${MAIL_INTERNAL_RECIPIENTS:-}
   # Базовый URL фронтенда — используется в ссылках внутри email-шаблонов.
   APP_FRONTEND_URL: ${APP_FRONTEND_URL}
 
