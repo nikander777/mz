@@ -7,6 +7,24 @@
 
 ---
 
+## Раскладка данных (с 01.10.2026)
+
+| Что | Где | Порт на VM-3 |
+|---|---|---|
+| `muzilla_main` | контейнер `postgres-main` (отдельный кластер, `data_checksums`) | 5433 |
+| `muzilla_discogs` | контейнер `postgres` (общий прежний кластер) | 5432 |
+| Meili main: `products`, `sellers` | `meilisearch-main` | 7701 |
+| Meili дискографии: `releases`, `artists`, `masters`, `labels` | `meilisearch` | 7700 |
+
+Сервисы main берут порт базы из `MAIN_DB_PORT`, адрес Meili — из
+`MAIN_MEILISEARCH_HOST` (в `.env` VM-1/VM-2); глобальный поиск ищет по
+дискографии через `DISCO_MEILISEARCH_HOST`. Порты данных VM-3 открыты только
+для VM-1 и VM-2 (`scripts/deploy/vm3-data-guard.sh`), с ноутбука — через
+`ssh -N -L 15433:localhost:5433 root@92.255.105.112`.
+
+Старая копия main в общем кластере — `muzilla_main_old_20261001` (путь отката,
+удалить после 08.10.2026).
+
 ## Что бэкапится
 
 Хранилище — Timeweb S3, бакет **`mz-backup`**. Реквизиты — `/opt/muzilla/.env.backup`
@@ -16,6 +34,9 @@
 |---|---|---|---|
 | `muzilla_main` + роли кластера | `pg-offsite.sh main`, VM-3, ежедневно 01:30 | `postgres/main/daily/`, `postgres/globals/` | 35 дней |
 | Проверка main восстановлением | `verify-offsite.sh main`, VM-3, ежедневно 02:00 | — | — |
+| **Архив WAL main** (восстановление на любой момент, потеря ≤ 5 мин) | контейнер `wal-archiver-main` + `wal-upload.sh`, VM-3, раз в минуту | `postgres/main/wal/` | 9 дней |
+| Базовая копия кластера main | `pg-basebackup.sh`, VM-3, ежедневно 01:45 | `postgres/main/base/` | 8 дней |
+| Проверка восстановления на момент времени | `verify-pitr.sh`, VM-3, ежедневно 02:15 | — | — |
 | `muzilla_discogs` | `pg-offsite.sh discogs`, VM-3, вс 02:30 | `postgres/discogs/weekly/` | 5 недель |
 | Проверка discogs полным чтением | `verify-offsite.sh discogs`, VM-3, вс 04:30 | — | — |
 | Файлы: `muzilla-private` и `muzilla-images` кроме `discogs/` | `files-offsite.sh`, VM-3, ежедневно 04:00 | `files/<бакет>/` | удалённое — 30 дней в `files-deleted/<дата>/` |
@@ -68,6 +89,34 @@ $R cat bk:mz-backup/postgres/main/daily/<файл>.dump \
 Восстанавливать в новую базу рядом, сверять и только потом переключать
 `MAIN_DB_DATABASE` / переименовывать. Время: ~1–2 минуты (дамп ~160 МБ).
 
+### main на конкретный момент (PITR)
+
+Например, вернуть базу на момент перед ошибочным `DELETE`. Берётся последняя
+базовая копия **до** нужного момента и к ней проигрывается архив WAL.
+Восстанавливать рядом, в отдельный контейнер; затем сверить и решить,
+переносить ли данные или переключаться целиком. Так же работает ежедневная
+проверка `verify-pitr.sh` — её код и есть рабочий рецепт.
+
+```bash
+W=/opt/muzilla/backups/pitr-manual && mkdir -p $W/data $W/wal
+$R lsf bk:mz-backup/postgres/main/base/                      # base-<ts>.tar.gz, выбрать до нужного момента
+$R cat bk:mz-backup/postgres/main/base/base-<ts>.tar.gz | tar -xz -C $W/data
+$R -v $W/wal:/wal copy bk:mz-backup/postgres/main/wal /wal --max-age 48h
+cat >> $W/data/postgresql.auto.conf <<'EOF'
+restore_command = 'if [ -f /wal/%f.gz ]; then gunzip -c /wal/%f.gz > "%p"; else cp /wal/%f "%p"; fi'
+recovery_target_time = '2026-10-01 12:34:00+00'
+recovery_target_action = 'promote'
+EOF
+touch $W/data/recovery.signal && chown -R 70:70 $W && chmod 700 $W/data
+docker run -d --name mz-pitr-manual -v $W/data:/var/lib/postgresql/data -v $W/wal:/wal:ro \
+  postgres:17-alpine postgres -c max_connections=200 -c ssl=off
+docker logs -f mz-pitr-manual        # ждать «database system is ready to accept connections»
+```
+
+`max_connections` — не меньше, чем у исходного кластера (200), иначе Postgres
+откажется восстанавливаться. Время: базовая копия ~300 МБ, восстановление —
+десятки секунд.
+
 ### discogs
 
 То же с `postgres/discogs/weekly/`, дамп ~14 ГБ. Для параллельного
@@ -101,9 +150,6 @@ $R -e RCLONE_CONFIG_BKC_TYPE=crypt -e RCLONE_CONFIG_BKC_REMOTE=bk:mz-backup/secr
 
 ## Что ещё не сделано
 
-- **PITR для main** (непрерывный архив WAL): включается на весь кластер, поэтому
-  ставится после выноса main в отдельный кластер Postgres. До того потеря —
-  до суток (ежедневный дамп).
 - Ключ бакета — от всего аккаунта Timeweb: с любой VM им можно удалить и
   бэкапы. Защита — версионирование или object lock на `mz-backup`, либо ключ
   с правами только на запись.
