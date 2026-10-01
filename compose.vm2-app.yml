@@ -343,6 +343,11 @@ services:
       # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
       # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
       DB_PORT: ${MAIN_DB_PORT:-5432}
+      # Свой экземпляр Meili у main (products, sellers) — порт 7701 с 01.10.2026,
+      # переключается явным MAIN_MEILISEARCH_HOST в .env. Индексы дискографии
+      # для глобального поиска — всегда в экземпляре discogs.
+      MEILISEARCH_HOST: ${MAIN_MEILISEARCH_HOST:-http://${VM3_HOST}:7700}
+      DISCO_MEILISEARCH_HOST: http://${VM3_HOST}:7700
     ports:
       - "${VM2_BIND:-0.0.0.0}:8080:8080"
     depends_on: [redis]
@@ -362,6 +367,11 @@ services:
       # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
       # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
       DB_PORT: ${MAIN_DB_PORT:-5432}
+      # Свой экземпляр Meili у main (products, sellers) — порт 7701 с 01.10.2026,
+      # переключается явным MAIN_MEILISEARCH_HOST в .env. Индексы дискографии
+      # для глобального поиска — всегда в экземпляре discogs.
+      MEILISEARCH_HOST: ${MAIN_MEILISEARCH_HOST:-http://${VM3_HOST}:7700}
+      DISCO_MEILISEARCH_HOST: http://${VM3_HOST}:7700
     depends_on: [redis]
     restart: unless-stopped
 
@@ -381,6 +391,11 @@ services:
       # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
       # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
       DB_PORT: ${MAIN_DB_PORT:-5432}
+      # Свой экземпляр Meili у main (products, sellers) — порт 7701 с 01.10.2026,
+      # переключается явным MAIN_MEILISEARCH_HOST в .env. Индексы дискографии
+      # для глобального поиска — всегда в экземпляре discogs.
+      MEILISEARCH_HOST: ${MAIN_MEILISEARCH_HOST:-http://${VM3_HOST}:7700}
+      DISCO_MEILISEARCH_HOST: http://${VM3_HOST}:7700
     depends_on: [redis]
     restart: unless-stopped
 
@@ -400,6 +415,11 @@ services:
       # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
       # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
       DB_PORT: ${MAIN_DB_PORT:-5432}
+      # Свой экземпляр Meili у main (products, sellers) — порт 7701 с 01.10.2026,
+      # переключается явным MAIN_MEILISEARCH_HOST в .env. Индексы дискографии
+      # для глобального поиска — всегда в экземпляре discogs.
+      MEILISEARCH_HOST: ${MAIN_MEILISEARCH_HOST:-http://${VM3_HOST}:7700}
+      DISCO_MEILISEARCH_HOST: http://${VM3_HOST}:7700
     depends_on: [redis]
     deploy:
       replicas: ${MAIN_MEDIA_WORKERS:-2}
@@ -417,6 +437,11 @@ services:
       # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
       # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
       DB_PORT: ${MAIN_DB_PORT:-5432}
+      # Свой экземпляр Meili у main (products, sellers) — порт 7701 с 01.10.2026,
+      # переключается явным MAIN_MEILISEARCH_HOST в .env. Индексы дискографии
+      # для глобального поиска — всегда в экземпляре discogs.
+      MEILISEARCH_HOST: ${MAIN_MEILISEARCH_HOST:-http://${VM3_HOST}:7700}
+      DISCO_MEILISEARCH_HOST: http://${VM3_HOST}:7700
     depends_on: [redis]
     restart: unless-stopped
 

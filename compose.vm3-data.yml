@@ -115,6 +115,36 @@ services:
       start_period: 180s
     restart: unless-stopped
 
+  # Отдельный экземпляр Meili для main: products и sellers (с 01.10.2026).
+  # Индексы дискографии повреждены и не раз роняли весь процесс (SIGSEGV,
+  # вечные циклы в фасетах) — вместе с ними лежал поиск и каталог товаров.
+  # Объём main — полмиллиона документов, собирается за минуты; при порче
+  # пересобирается из Postgres (products:meili-index, scout:import).
+  meilisearch-main:
+    logging: *default-logging
+    image: getmeili/meilisearch:v1.53.1
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_SCHEDULE_SNAPSHOT: "86400"
+      MEILI_SNAPSHOT_DIR: /meili_data/snapshots
+    ulimits:
+      nofile:
+        soft: 524288
+        hard: 524288
+    volumes:
+      - meili_main_data:/meili_data
+    ports:
+      - "${VM3_BIND:-0.0.0.0}:7701:7700"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:7700/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
   minio:
     logging: *default-logging
     image: minio/minio:latest
@@ -178,4 +208,5 @@ volumes:
   # его из виду до удаления вручную.
   meili_data:
   meili_data_v2:
+  meili_main_data:
   minio_data:

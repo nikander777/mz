@@ -307,6 +307,11 @@ services:
       # Отдельный кластер main на VM-3 — порт 5433 (с 29.09.2026). Переключается
       # только явным MAIN_DB_PORT в .env: по умолчанию остаётся общий кластер.
       DB_PORT: ${MAIN_DB_PORT:-5432}
+      # Свой экземпляр Meili у main (products, sellers) — порт 7701 с 01.10.2026,
+      # переключается явным MAIN_MEILISEARCH_HOST в .env. Индексы дискографии
+      # для глобального поиска — всегда в экземпляре discogs.
+      MEILISEARCH_HOST: ${MAIN_MEILISEARCH_HOST:-http://${VM3_HOST}:7700}
+      DISCO_MEILISEARCH_HOST: http://${VM3_HOST}:7700
       DISCOGS_DB_HOST: ${VM3_HOST}
       DISCOGS_DB_DATABASE: ${MAIN_DISCOGS_DB_DATABASE}
       DISCOGS_DB_USERNAME: ${POSTGRES_USER}
