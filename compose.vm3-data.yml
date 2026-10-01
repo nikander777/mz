@@ -81,6 +81,23 @@ services:
       -c ssl_cert_file=/etc/postgresql/ssl/server.crt
       -c ssl_key_file=/etc/postgresql/ssl/server.key
 
+  # Непрерывный архив WAL кластера main (восстановление на любой момент).
+  # pg_receivewal через слот mz_main_archive пишет сжатые сегменты в
+  # backups/wal-main-spool, оттуда scripts/backup/wal-upload.sh (cron раз в
+  # минуту) переносит их в бакет. Живёт в сетевом пространстве postgres-main и
+  # ходит на 127.0.0.1 — для этого адреса репликация в pg_hba уже разрешена.
+  # Подготовка слота и каталога — scripts/backup/setup-wal-main.sh.
+  wal-archiver-main:
+    logging: *default-logging
+    image: postgres:17-alpine
+    network_mode: "service:postgres-main"
+    user: "70:70"
+    volumes:
+      - ./backups/wal-main-spool:/spool
+    command: pg_receivewal -h 127.0.0.1 -U ${POSTGRES_USER} -D /spool -S mz_main_archive -Z gzip --synchronous
+    depends_on: [postgres-main]
+    restart: unless-stopped
+
   meilisearch:
     logging: *default-logging
     image: getmeili/meilisearch:v1.53.1

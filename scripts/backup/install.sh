@@ -22,7 +22,10 @@ CRON=/etc/cron.d/muzilla-backup
 case "$ROLE" in
     vm3)
         JOBS="30 1 * * * root flock -n /run/mzb-pg-main.lock $DIR/pg-offsite.sh main
+45 1 * * * root flock -n /run/mzb-base-main.lock $DIR/pg-basebackup.sh
 0 2 * * * root flock -n /run/mzb-verify-main.lock $DIR/verify-offsite.sh main
+15 2 * * * root flock -n /run/mzb-pitr-main.lock $DIR/verify-pitr.sh
+* * * * * root flock -n /run/mzb-wal-main.lock $DIR/wal-upload.sh
 30 2 * * 0 root flock -n /run/mzb-pg-discogs.lock $DIR/pg-offsite.sh discogs
 30 4 * * 0 root flock -n /run/mzb-verify-discogs.lock $DIR/verify-offsite.sh discogs
 0 4 * * * root flock -n /run/mzb-files.lock $DIR/files-offsite.sh
