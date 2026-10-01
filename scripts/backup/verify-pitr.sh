@@ -51,10 +51,16 @@ EOF
     chmod 700 "$WORK/data"
 
     docker run -d --name "$NAME" -v "$WORK/data:/var/lib/postgresql/data" -v "$WORK/wal:/wal:ro" \
-        "$PG_IMAGE" postgres -c shared_buffers=512MB -c ssl=off >/dev/null || { JOB_ERROR="не запустился Postgres восстановления"; return 1; }
+        "$PG_IMAGE" postgres -c shared_buffers=512MB -c max_connections=200 -c ssl=off >/dev/null || { JOB_ERROR="не запустился Postgres восстановления"; return 1; }
 
     local i state=""
+    # max_connections не меньше, чем у исходного кластера (200): иначе Postgres
+    # отказывается восстанавливаться — «insufficient parameter settings».
     for i in $(seq 1 180); do
+        if [ "$(docker inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" != true ]; then
+            JOB_ERROR="Postgres восстановления остановился: $(docker logs --tail 4 "$NAME" 2>&1 | tr '\n' ' ' | tr '"' "'" | cut -c1-300)"
+            return 1
+        fi
         state=$(docker exec "$NAME" psql -U muzilla -d postgres -Atc "select pg_is_in_recovery()" 2>/dev/null)
         [ "$state" = f ] && break
         sleep 5
