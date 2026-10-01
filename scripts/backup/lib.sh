@@ -32,7 +32,11 @@ BUCKET=${BACKUP_BUCKET:-mz-backup}
 HOST_TAG=${BACKUP_HOST_TAG:-$(hostname -s)}
 RC_EXTRA=()
 
-log() { echo "$(date -u +%FT%TZ) [$JOB] $*" | tee -a "$LOG" >&2; }
+# Всё, что задача пишет в stderr (pg_restore, rclone), — в журнал: cron вывод
+# выбрасывает, и 30.09–01.10 ночная проверка падала без текста ошибки.
+exec 2>>"$LOG"
+
+log() { echo "$(date -u +%FT%TZ) [$JOB] $*" | tee -a "$LOG"; }
 
 # rclone в контейнере. -i нужен, чтобы rcat читал поток из конвейера.
 rc() { docker run --rm -i --env-file "$BACKUP_ENV" "${RC_EXTRA[@]}" "$RCLONE_IMAGE" -q "$@"; }
