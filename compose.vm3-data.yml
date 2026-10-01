@@ -129,6 +129,13 @@ services:
       MEILI_NO_ANALYTICS: "true"
       MEILI_SCHEDULE_SNAPSHOT: "86400"
       MEILI_SNAPSHOT_DIR: /meili_data/snapshots
+      # По умолчанию Meili склеивает накопившиеся задачи в батч до 10 ГиБ и
+      # падает на нём с «size is greater than supported» (01.10.2026: 199 из
+      # 266 задач первичной заливки), а индексации отдаёт до 2/3 памяти
+      # машины — на VM-3, где у Postgres 32 ГБ shared_buffers.
+      MEILI_EXPERIMENTAL_MAX_NUMBER_OF_BATCHED_TASKS: "10"
+      MEILI_EXPERIMENTAL_LIMIT_BATCHED_TASKS_TOTAL_SIZE: "1073741824"
+      MEILI_MAX_INDEXING_MEMORY: "8GiB"
     ulimits:
       nofile:
         soft: 524288
