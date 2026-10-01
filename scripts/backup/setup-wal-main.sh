@@ -15,7 +15,7 @@ set -euo pipefail
 PG=muzilla-postgres-main-1
 SPOOL=/opt/muzilla/backups/wal-main-spool
 
-docker exec "$PG" psql -U muzilla -d postgres -v ON_ERROR_STOP=1 -Atq <<'SQL'
+docker exec -i "$PG" psql -U muzilla -d postgres -v ON_ERROR_STOP=1 -Atq <<'SQL'
 select pg_create_physical_replication_slot('mz_main_archive', true)
 where not exists (select 1 from pg_replication_slots where slot_name = 'mz_main_archive');
 alter system set max_slot_wal_keep_size = '50GB';
