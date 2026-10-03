@@ -477,6 +477,13 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
   найдёт шаблон по метке; зависшую (час исполнения + 2 ч без исхода) поднимет сверка.
 - Сумма заявки вычитается из «доступно» (строка «Вывод в обработке»), пока НКО не исполнила
   шаблон и остаток не отразил списание.
+- **Отмена заявки — из админки** (карточка продавца → «Финансы» → «Заявки на вывод» →
+  «Отменить», право `finance.payouts`). Снимает шаблон в НКО (`DeleteOperationTemplate`) и
+  закрывает заявку `failed` с причиной, которую видит продавец; сумма уходит из удержания.
+  Нужна, когда шаблон сняли руками в кабинете НКО: трекеру такой шаблон уже не отвечает, и
+  заявка висит в processing, держа сумму. Порядок: сперва спрашиваем НКО об исходе —
+  исполненный вывод не отменяется, заявка закрывается номером операции (422); шаблона нет —
+  закрываем отменённой; НКО не ответила — 502 и статус не меняем (деньги могли уйти).
 - В логи MerchantAPI не попадают платёжный пароль и номер р/с в запросе (`MonetaPayloadSanitizer`);
   ответы MerchantAPI логируются без санитайзера — номер счёта из `FindBankAccounts` там виден.
 - Кабинет НКО — тот же, что у выписки и возвратов (`MONETA_USERNAME`, ЛК2 «Клиенты», где
@@ -511,7 +518,7 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
 | `balance_mismatch` | остаток НКО ≠ сумма выписки дольше 2 ч | — |
 | `sync_failed` / `sync_stale` | выписка не грузится / не обновлялась дольше 3 ч | VM-2 без `MONETA_*` (09.09) |
 | `undelivered_not_refunded` | посылка вернулась, деньги покупателю не возвращены | 2999 |
-| `withdrawal_stuck` | вывод без исхода: шаблон должен был исполниться 2+ ч назад (или не создан 30+ мин) | — |
+| `withdrawal_stuck` | вывод без исхода: шаблон должен был исполниться 2+ ч назад (или не создан 30+ мин); закрывается отменой заявки из карточки продавца | 100 ₽ М9 (02.10, шаблон снят в НКО руками) |
 
 ---
 
@@ -594,7 +601,7 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
 
 Через них поддержка исправляет/переоформляет онбординг продавца, когда самообслуживание заблокировано.
 
-Финансы продавцов — `Admin\SellerFinanceController` (право `finance.view`, корректировка — `finance.payouts`):
+Финансы продавцов — `Admin\SellerFinanceController` (право `finance.view`, корректировка и отмена вывода — `finance.payouts`):
 
 | Ручка | Что делает |
 |---|---|
@@ -604,6 +611,7 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
 | `GET …/finance/ledger?type=&period=&source=` | история счёта с номером операции НКО и атрибутами выписки |
 | `POST …/finance/sync` | подтянуть выписку и остаток сейчас |
 | `POST …/finance/adjustments` `{amount, reason}` | корректировка долга: «−» добавляет, «+» гасит; в журнал действий |
+| `POST …/finance/withdrawals/{withdrawal}/cancel` `{reason}` | отмена вывода: снять шаблон в НКО, закрыть заявку, освободить сумму; 422 — отменять нечего, 502 — НКО не ответила |
 
 Консоль: `php artisan sellers:sync-accounts [--profile=ID] [--since=Y-m-d] [--rebuild]` —
 догрузить выписку или пересобрать историю из НКО (учёт площадки не трогается).
@@ -626,7 +634,7 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
 | Окно удержания | `app/Jobs/ReleaseDeliveredOrders.php`, `app/Jobs/InitiateSellerPayout.php`, `app/Services/Payment/PayoutService.php` (развилка по драйверу), `app/Services/Seller/SellerSettlementService.php` |
 | Счёт продавца и выписка | `app/Services/Seller/SellerAccountSync.php`, `app/Services/Seller/Statement/{MerchantApiStatementClient,StatementOperation,StatementLedgerWriter}.php`, `app/Jobs/{ReconcileSellerBalances,SyncSellerAccount}.php`, `app/Listeners/SyncSellerAccountsOnMoneyEvent.php` |
 | Сверка | `app/Services/Seller/SellerFinanceAnomalies.php`, `app/Jobs/ReportSellerFinanceAnomalies.php` |
-| Вывод | `app/Services/Seller/SellerWithdrawalService.php`, `app/Contracts/Payment/SellerWithdrawalTransport.php`, `app/Services/Seller/Withdrawal/{MonetaTemplateWithdrawalTransport,MonetaWithdrawalTemplates,WithdrawalQuote,UnconfiguredWithdrawalTransport}.php`, `app/Jobs/TrackSellerWithdrawals.php`, `app/Console/Commands/SellerWithdrawalProbeCommand.php` |
+| Вывод | `app/Services/Seller/SellerWithdrawalService.php` (`withdraw`, `probe`, `cancel`), `app/Contracts/Payment/SellerWithdrawalTransport.php`, `app/Services/Seller/Withdrawal/{MonetaTemplateWithdrawalTransport,MonetaWithdrawalTemplates,WithdrawalQuote,WithdrawalOutcome,UnconfiguredWithdrawalTransport}.php`, `app/Jobs/TrackSellerWithdrawals.php`, `app/Console/Commands/SellerWithdrawalProbeCommand.php` |
 | API счёта | `app/Http/Controllers/Api/Profile/SellerBalanceController.php`, `app/Http/Controllers/Admin/SellerFinanceController.php` |
 | Джобы онбординга | `app/Jobs/RegisterSellerInMonetaJob.php`, `ActivateMonetaUnitJob.php`, `ReconcileMonetaContractsJob.php` |
 | Модель | `app/Models/SellerProfile.php` |
