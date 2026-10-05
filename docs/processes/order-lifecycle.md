@@ -85,9 +85,31 @@ stateDiagram-v2
 | `POST` | `/api/orders/{order}/accept` | `accept()` | `PENDING → CONFIRMED` (продавец) |
 | `POST` | `/api/orders/{order}/seller-cancel` | `sellerCancel()` | `PROCESSING → CANCELLED` + возврат (пока посылка не сдана) |
 | `POST` | `/api/orders/{order}/extend-wait` | `extendWait()` | продление ожидания покупателем: `+48ч` к `shipping_deadline_at` |
-| `GET` | `/api/orders/{order}/wait-action/{action}` | `OrderWaitActionController` | подписанная ссылка из письма: `extend-wait` / `buyer-cancel` / `seller-cancel` |
 | `POST` | `/api/orders/{order}/cancel` | `cancel()` | `→ CANCELLED` (возврат склада/денег) |
 | `POST` | `/api/orders/{order}/dispute` | `dispute()` | `SHIPPED/DELIVERED → DISPUTED` |
+
+### Кнопки в письмах: решение без входа в ЛК
+
+Письма «Готовы подождать ещё 2 дня?» (покупателю) и «Покупатель ждёт заказ» (продавцу) несут подписанные ссылки. Эти маршруты — вне группы `auth`: вместо сессии работает подпись со сроком `marketplace.wait.signed_link_ttl_hours` (96 ч). `{action}` — `App\Enums\OrderWaitAction`: `extend-wait`, `buyer-cancel`, `seller-cancel`.
+
+| Метод | Путь | Метод контроллера | Что делает |
+|---|---|---|---|
+| `GET` | `/api/orders/{order}/wait-action/{action}` | `OrderWaitActionController::open()` | вход по ссылке из письма: проверяет подпись, кладёт её в cookie `wait_action` на этом пути и уводит на страницу Nuxt `/orders/{order}/wait-action/{action}`. Заказ **не меняет** |
+| `GET` | `…/{action}/preview` | `show()` | для страницы: состав заказа, сроки и можно ли ещё (`available` / `stale`) |
+| `POST` | `…/{action}` | `perform()` | выполняет действие по кнопке на странице (`extended` / `cancelled` / `stale`) |
+
+На всей группе — `throttle:30,1,wait-action`. Префикс обязателен: без него `throttle:N,M` считает все такие маршруты одним счётчиком на IP.
+
+Почему так:
+
+- **Действие — только POST по кнопке.** Ссылки из писем открывают и почтовые сканеры, без участия человека, а среди кнопок есть отмена с возвратом денег.
+- **Подписи нет в адресе страницы.** Метрика (с Вебвизором) и Top.Mail.Ru отправляют `location.href` при загрузке, поэтому подпись живёт в HttpOnly-cookie на пути API.
+- **Подпись относительная** (`absolute: false`), она не зависит от схемы и хоста за прокси. До 05.10.2026 подпись была абсолютной, а edge передавал `X-Forwarded-Proto: http`, поэтому все кнопки отдавали 403. Старые абсолютные ссылки вход ещё принимает. Ветку можно убрать через 96 ч (TTL ссылки) после выкатки относительной подписи на прод.
+- **Битая или просроченная ссылка** не отдаёт ответ API: вход уводит на страницу с `?link=invalid|expired`, а неверная подпись пишет в лог warning `OrderWaitAction: неверная подпись ссылки из письма`.
+
+Логика и гейты — `App\Services\Order\OrderWaitActionService`. Используются те же `canBuyerExtendWait()` / `canBuyerCancel()` / `canSellerCancel()`, что у кнопок ЛК. В истории заказа решение помечается «(по ссылке из письма)», в логе пишется info `OrderWaitAction: решение по ссылке из письма` с IP и User-Agent — для разбора жалоб «я этого не делал».
+
+**Замок решения по заказу** — `OrderService::withDecisionLock()` (Redis, `orders:{id}:decision`). Его берут кнопки ЛК (`cancel`, `sellerCancel`, `extendWait`), ссылки из писем и `ProcessUnshippedOrderDeadlines`; внутри замка заказ перечитывается. Джоба отбирает заказы в начале прогона и опрашивает перевозчика. Без замка она отменяла заказ, который покупатель продлил за эти секунды. Отмена из ЛК и по ссылке одновременно возвращала остаток на склад дважды. Замок не реентерабельный: брать его только на внешнем уровне.
 
 Оплата приходит только вебхуком Moneta — см. [Платежи](/processes/payments-moneta). Stub-эндпоинт `POST /api/orders/{order}/pay` удалён 26.09.2026: он был открыт на проде и переводил заказ в оплаченный без денег (с накладной и окном отправки для продавца).
 
@@ -156,6 +178,7 @@ stateDiagram-v2
 | Посылка не вручена (СДЭК `NOT_DELIVERED`) | `delivery_status=returned`, выплата не разблокируется, сверка финансов поднимает заказ | поддержка: возврат покупателю |
 | Вебхук доставки/оплаты потерялся | поллинг `CheckDeliveryStatus` / статусы Moneta досверяются | автоматически (fallback-джобы) |
 | Отмена уже оплаченного | `cancelOrder()` возвращает склад и деньги | покупатель/продавец/поддержка |
+| Кнопки из письма ведут на «Не получилось открыть ссылку» | в логе main — warning `OrderWaitAction: неверная подпись ссылки из письма`. Проверить, что ссылка не обрезана, `APP_KEY` одинаков на VM-1 и VM-2 (письмо собирает воркер VM-2), а edge передаёт `X-Forwarded-Proto` от Caddy (`docker/edge/nginx.conf`) | разработчики |
 
 ## Как тестировать
 
@@ -167,7 +190,7 @@ stateDiagram-v2
 4. Спор: `dispute()` из `SHIPPED/DELIVERED` → заказ не уходит в автовыплату.
 5. Отмена оплаченного → возврат склада и денег.
 
-**Покрытие автотестами:** `tests/Feature/Orders/OrderShippingWindowFlowTest.php` + `ShippingDeadlineFlowTest.php` + `EndToEndPaymentFlowTest.php` (сквозные). **Пробел:** ветки спора — см. [матрицу покрытия](/testing/coverage-matrix).
+**Покрытие автотестами:** `tests/Feature/Orders/OrderShippingWindowFlowTest.php` + `ShippingDeadlineFlowTest.php` + `EndToEndPaymentFlowTest.php` (сквозные); кнопки в письмах — `tests/Feature/Orders/BuyerWaitDecisionFlowTest.php` (вход, cookie, POST, подпись за прокси, старые ссылки) и `nuxt/tests/unit/pages/OrderWaitActionPage.test.ts` (страница подтверждения). **Пробел:** ветки спора — см. [матрицу покрытия](/testing/coverage-matrix).
 
 ## Ключевые файлы
 
@@ -175,6 +198,7 @@ stateDiagram-v2
 |---|---|
 | Статусы | `app/Enums/{OrderStatus,PaymentStatus,DeliveryStatus}.php` |
 | Endpoints | `main/routes/api.php` (группа `orders`), `app/Http/Controllers/Api/Orders/OrderController.php` |
+| Кнопки в письмах | `app/Services/Order/OrderWaitActionService.php`, `app/Http/Controllers/Api/Orders/OrderWaitActionController.php`, `nuxt/pages/orders/[id]/wait-action/[action].vue` |
 | Переходы | `app/Services/Order/OrderService.php` |
 | Джобы | `app/Jobs/{ProcessUnshippedOrderDeadlines,ReleaseDeliveredOrders,CheckDeliveryStatus,SendUnshippedOrderReminders,RefreshPendingCdekShipments}.php` |
 | Расписание | `main/routes/console.php` |
