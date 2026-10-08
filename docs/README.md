@@ -26,7 +26,8 @@ npm run docs:build    # статическая сборка в docs/.vitepress/d
 ## overview/ (Обзор проекта — флоу простым языком)
 
 - [`index.md`](overview/index.md) — о площадке + список разделов
-- Постранично: `auth`, `discography`, `marketplace`, `product`, `cart-checkout`, `orders`, `buyer-account`, `seller-account`, `messages`, `reviews`, `news`
+- Постранично: `auth`, `discography`, `marketplace`, `product`, `cart-checkout`, `orders` (включая отмену отдельной позиции), `buyer-account`, `seller-account`, `messages`, `reviews`, `news`
+- [`promo-codes.md`](overview/promo-codes.md) — промокоды продавцов: создание в админке, применение покупателем, выбор товара, деньги, аналитика, сценарии тестирования
 
 ## processes/ (Техническая документация — «что где вызывается»)
 
@@ -34,6 +35,7 @@ npm run docs:build    # статическая сборка в docs/.vitepress/d
 - [`order-lifecycle.md`](processes/order-lifecycle.md) — жизненный цикл заказа (P0)
 - [`checkout.md`](processes/checkout.md) — оформление заказа + корзина (P0)
 - [`payments-moneta.md`](processes/payments-moneta.md) — платежи Moneta (P0)
+- [`promo-codes.md`](processes/promo-codes.md) — промокоды продавцов и отмена позиции заказа: таблицы, модель денег, эндпоинты, права, возвраты, выкатка (P0)
 - `auth`, `catalog-search`, `cart-wishlist`, `delivery`, `reviews`, `seller-listing`, `operations`
 
 ## architecture/

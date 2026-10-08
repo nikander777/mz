@@ -1,7 +1,7 @@
 # Жизненный цикл заказа
 
 > Каноничная карта того, как заказ проходит путь от создания до завершения (или отмены): кто и чем двигает статус, какие джобы работают в фоне, какие события и уведомления при этом стреляют.
-> Приоритет: **P0** (ядро маркетплейса). Актуально на 2026-09-22.
+> Приоритет: **P0** (ядро маркетплейса). Актуально на 2026-10-08.
 
 ## Действующие лица
 
@@ -87,6 +87,7 @@ stateDiagram-v2
 | `POST` | `/api/orders/{order}/extend-wait` | `extendWait()` | продление ожидания покупателем: `+48ч` к `shipping_deadline_at` |
 | `POST` | `/api/orders/{order}/cancel` | `cancel()` | `→ CANCELLED` (возврат склада/денег) |
 | `POST` | `/api/orders/{order}/dispute` | `dispute()` | `SHIPPED/DELIVERED → DISPUTED` |
+| `POST` | `/api/orders/{order}/items/{orderItem}/cancel` | `OrderItemCancellationController::cancel()` | — (статус не меняется): отмена одной позиции оплаченного неотправленного заказа, см. ниже |
 
 ### Кнопки в письмах: решение без входа в ЛК
 
@@ -110,6 +111,14 @@ stateDiagram-v2
 Логика и гейты — `App\Services\Order\OrderWaitActionService`. Используются те же `canBuyerExtendWait()` / `canBuyerCancel()` / `canSellerCancel()`, что у кнопок ЛК. В истории заказа решение помечается «(по ссылке из письма)», в логе пишется info `OrderWaitAction: решение по ссылке из письма` с IP и User-Agent — для разбора жалоб «я этого не делал».
 
 **Замок решения по заказу** — `OrderService::withDecisionLock()` (Redis, `orders:{id}:decision`). Его берут кнопки ЛК (`cancel`, `sellerCancel`, `extendWait`), ссылки из писем и `ProcessUnshippedOrderDeadlines`; внутри замка заказ перечитывается. Джоба отбирает заказы в начале прогона и опрашивает перевозчика. Без замка она отменяла заказ, который покупатель продлил за эти секунды. Отмена из ЛК и по ссылке одновременно возвращала остаток на склад дважды. Замок не реентерабельный: брать его только на внешнем уровне.
+
+### Отмена отдельной позиции
+
+Покупатель, продавец (`POST /api/orders/{order}/items/{orderItem}/cancel`) или админ с `orders.cancel` (`POST /api/admin/orders/{id}/items/{itemId}/cancel`) отменяют одну строку заказа, обязательна причина. Условия: `pricing_model = bpa_v2`, статус `PAID`/`PROCESSING`, `shipped_at` пуст, `payment_status = completed`, холд не в `settling` (`409`), активных строк ≥ 2 — последнюю отменяют отменой заказа. Выполняется `OrderItemCancellationService` **под замком решений** `withDecisionLock`. Статус заказа не меняется: в `order_status_history` пишется запись с тем же статусом и комментарием «Отменена позиция …». Начисленные `subtotal`/`total_amount` не трогаются — растёт `orders.cancelled_items_amount`, `fee_amount` пересчитывается от `netSubtotal()`, товар возвращается на склад. Деньги: холд — строка не войдёт в подтверждение (`PaymentHoldService` списывает `netTotal()`), СБП — `IssueOrderItemRefund` возвращает строку счёта. Доставка не возвращается, заявка СДЭК не меняется; продавцу письмо «не кладите в посылку» (`OrderItemCancelled` → `OrderItemCancelledNotification`). Полная отмена после этого возвращает только остаток. Подробно — [Промокоды и отмена позиции](/processes/promo-codes#отмена-позиции).
+
+### Промокод следует за статусом заказа
+
+Хук `Order::updated` при смене `status` или `payment_status` вызывает `PromoRedemptionService::syncWithOrder()`: оплата (в том числе холд) → применение `used`, отмена любым путём (`cancelOrder`, `sellerCancelOrder`, автоотмена по срокам, `CancelUnpaidOrders`, отказ провайдера) → `released`. Возврат, спор и завершение применение не трогают. Хук выбран вместо слушателей, потому что часть отмен событий не бросает. Подробно — [Промокоды и отмена позиции](/processes/promo-codes#промокод-жизненныи-цикл-применения).
 
 Оплата приходит только вебхуком Moneta — см. [Платежи](/processes/payments-moneta). Stub-эндпоинт `POST /api/orders/{order}/pay` удалён 26.09.2026: он был открыт на проде и переводил заказ в оплаченный без денег (с накладной и окном отправки для продавца).
 
@@ -160,6 +169,7 @@ stateDiagram-v2
 | `OrderDelivered` | `SendOrderDeliveredNotification` | уведомление покупателю |
 | `OrderCompleted` | `SendOrderCompletedNotification` | уведомление продавцу |
 | `OrderCancelled` | `SendOrderCancelledNotification` | уведомление сторонам |
+| `OrderItemCancelled` | `SendOrderItemCancelledNotification` | письмо об отмене позиции: покупателю всегда, продавцу — если отменил не он |
 
 `OrderDelivered` также диспатчится из `Order::booted()` при смене `delivery_status → delivered`.
 
@@ -189,6 +199,7 @@ stateDiagram-v2
 3. Разблокировка денег: истечение окна удержания → `InitiateSellerPayout` (по уже завершённому заказу тоже).
 4. Спор: `dispute()` из `SHIPPED/DELIVERED` → заказ не уходит в автовыплату.
 5. Отмена оплаченного → возврат склада и денег.
+6. Отмена позиции: холд (строки нет в подтверждении) и СБП (возврат строки), запреты, полная отмена после неё. Автотесты — `tests/Feature/Orders/OrderItemCancellationTest.php`; хук промокода — `tests/Feature/Promo/PromoRedemptionLifecycleTest.php`.
 
 **Покрытие автотестами:** `tests/Feature/Orders/OrderShippingWindowFlowTest.php` + `ShippingDeadlineFlowTest.php` + `EndToEndPaymentFlowTest.php` (сквозные); кнопки в письмах — `tests/Feature/Orders/BuyerWaitDecisionFlowTest.php` (вход, cookie, POST, подпись за прокси, старые ссылки) и `nuxt/tests/unit/pages/OrderWaitActionPage.test.ts` (страница подтверждения). **Пробел:** ветки спора — см. [матрицу покрытия](/testing/coverage-matrix).
 
@@ -200,6 +211,8 @@ stateDiagram-v2
 | Endpoints | `main/routes/api.php` (группа `orders`), `app/Http/Controllers/Api/Orders/OrderController.php` |
 | Кнопки в письмах | `app/Services/Order/OrderWaitActionService.php`, `app/Http/Controllers/Api/Orders/OrderWaitActionController.php`, `nuxt/pages/orders/[id]/wait-action/[action].vue` |
 | Переходы | `app/Services/Order/OrderService.php` |
+| Отмена позиции | `app/Services/Order/OrderItemCancellationService.php`, `app/Http/Controllers/Api/Orders/OrderItemCancellationController.php`, `app/Jobs/IssueOrderItemRefund.php` |
+| Промокод в заказе | `app/Services/Promo/PromoRedemptionService.php` (хук в `Order::boot()`) |
 | Джобы | `app/Jobs/{ProcessUnshippedOrderDeadlines,ReleaseDeliveredOrders,CheckDeliveryStatus,SendUnshippedOrderReminders,RefreshPendingCdekShipments}.php` |
 | Расписание | `main/routes/console.php` |
 | События/слушатели | `app/Providers/AppServiceProvider.php`, `app/Events/Order*`, `app/Listeners/*` |

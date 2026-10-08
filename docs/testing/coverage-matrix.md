@@ -16,9 +16,24 @@
 | 8 | [Выплаты продавцам](/business/seller-payouts-flow) | P1 | ✅ 7 (Payout) | отмена/reconcile |
 | 9 | [Отзывы](/processes/reviews) | P1 | 🔴 **0** | **весь флоу** |
 | 10 | [Продажа товара](/processes/seller-listing) | P1 | 🟡 часть Profile (40) | форма, привязка Discogs |
+| 11 | [Промокоды продавцов](/processes/promo-codes) | **P0** | ✅ 64 (Promo) + Vitest 10 | касса агрегатора в тестах замокана |
+| 12 | [Отмена позиции заказа](/processes/promo-codes#отмена-позиции) | **P0** | ✅ 21 | частичное подтверждение и возврат строки — на моках провайдера |
 | — | Сообщения / диалоги | P1 | 🔴 **0** | **весь флоу + WebSocket** |
 
 Легенда: ✅ покрыто · 🟡 частично · 🔴 не покрыто.
+
+### Промокоды и отмена позиции (с 2026-10-08)
+
+| Файл | Тестов | Что покрыто |
+|---|---|---|
+| `main/tests/Feature/Promo/PromoCodeEvaluatorTest.php` | 19 | проверки и тексты, выбор товара, ничья по цене, другие скидки, порог 1 ₽, лимит промахов |
+| `main/tests/Feature/Promo/PromoCheckoutTest.php` | 13 | предрасчёт, промахи при оформлении, деление позиции, антидубль, истёкший код, лимит, частичный индекс, изменившаяся скидка, комиссия |
+| `main/tests/Feature/Promo/PromoRedemptionLifecycleTest.php` | 9 | RESERVED → USED → RELEASED по всем путям оплаты и отмены |
+| `main/tests/Feature/Promo/PromoMoneyFlowTest.php` | 7 | чек, возврат по оплаченной цене, СДЭК, отзывы, уведомления |
+| `main/tests/Feature/Promo/CartPromoEvaluateTest.php` | 5 | проверка в корзине: 401 / 200 / 429 |
+| `main/tests/Feature/Promo/AdminPromoCodeTest.php` | 11 | права, CRUD, закрытые поля, статусы, аналитика |
+| `main/tests/Feature/Orders/OrderItemCancellationTest.php` | 21 | холд и СБП, запреты, полная отмена после позиции, сверка, потолок возврата, ежечасный повтор |
+| `nuxt/tests/unit/stores/cartPromo.test.ts` | 10 | промокод в сторе корзины |
 
 ## Критические дыры (P0 без покрытия)
 

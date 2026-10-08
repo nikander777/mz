@@ -1,7 +1,7 @@
 # Оформление заказа (checkout)
 
 > Как товары из корзины превращаются в заказы: выбор товаров, доставка и ПВЗ, адрес получателя, разбивка по продавцам и инициация оплаты. Включает работу корзины на этапе оформления.
-> Приоритет: **P0**. Актуально на 2026-09-19.
+> Приоритет: **P0**. Актуально на 2026-10-08.
 
 ## Действующие лица
 
@@ -60,6 +60,8 @@ flowchart TD
 | Метод | Путь | Метод | Назначение |
 |---|---|---|---|
 | `POST` | `/api/orders/calculate` | `CheckoutController::calculate()` | Предрасчёт: subtotal + delivery + platform_fee (без создания) |
+| `POST` | `/api/orders/checkout/preview` | `CheckoutController::preview()` | Серверный предрасчёт экрана подтверждения (`previewOrders`): суммы, доставка, issues, промокод |
+| `POST` | `/api/cart/promo-code/evaluate` | `CartPromoCodeController::evaluate()` | Проверка промокода в корзине (`throttle:20,1`), ничего не резервирует |
 | `POST` | `/api/orders/checkout` | `CheckoutController::process()` | **Создать заказы из корзины** (`throttle:12,1`) |
 | `POST` | `/api/orders/delivery/calculate` | `DeliveryController::calculate()` | Стоимость/сроки доставки (один или все перевозчики) |
 | `GET` | `/api/orders/delivery/pickup-points` | `DeliveryController::pickupPoints()` | ПВЗ по городу / координатам / bbox карты |
@@ -74,13 +76,13 @@ flowchart TD
 
 1. `resolveBatchDriver()` — драйвер платежа батча по участникам сделки (`PaymentProviderManager::forParticipants`, роллаут по allowlist покупателей/продавцов): `bpa` (касса агрегатора, чек 54-ФЗ) или `moneta` (историческая схема). Батч попадает в схему целиком.
 2. `resolveSellerOrder()` для каждого продавца — серверная проверка: цена из БД, доставка из `DeliveryService`, принадлежность товара продавцу, `canSell()`. При драйвере `bpa` дополнительно фискальный гейт `SellerFiscalReadiness` (счёт в НКО, ИНН, название, телефон) → issue `seller_not_fiscal_ready`. Любая проблема → `CheckoutValidationException` → `422` + `issues`, заказы не создаются. Тот же разбор использует `previewOrders()` (`POST /api/orders/checkout/preview`), поэтому экран подтверждения и созданный заказ не расходятся.
-3. `assertNoDuplicateCheckout()` — повтор того же набора товаров у того же продавца за последние `marketplace.checkout.duplicate_window_minutes` (30) отбивается: `DuplicateCheckoutException` → `409` + блок `existing` (батч, номера заказов, `is_payable`). Окно учитывает и **оплаченные** заказы, отменённые — игнорирует. Осознанный повтор проходит по `duplicate_ack: true` в теле запроса.
+3. `assertNoDuplicateCheckout()` — повтор того же набора товаров у того же продавца за последние `marketplace.checkout.duplicate_window_minutes` (30) отбивается: `DuplicateCheckoutException` → `409` + блок `existing` (батч, номера заказов, `is_payable`). Окно учитывает и **оплаченные** заказы, отменённые — игнорирует. Осознанный повтор проходит по `duplicate_ack: true` в теле запроса. Отпечаток состава (`itemsFingerprint`) **суммирует количество по `product_id`**: позицию со скидкой промокода заказ хранит двумя строками, а в корзине она одна.
 4. `generatePaymentBatchId()` → `BATCH-YYYYMMDD-HHMMSS-XXXXX` на всю группу.
 5. `pricing_model = PaymentProviderManager::pricingModelFor(driver)` (`bpa_v2` / `legacy_flat10`) фиксируется на заказе и больше не меняется: от неё зависят комиссия, база выплаты и драйвер оплаты (`forNewBatch` читает её с заказа).
 6. Для каждого продавца создаётся отдельный `Order`:
-   - `subtotal = Σ(price × qty)`, `delivery_cost` серверная, `fee_amount = Order::calculatePlatformFeeFor(subtotal, pricing_model)` (в `bpa_v2` — по карточной ставке как максимальной, уточняется при инициации платежа), `total_amount`.
+   - `subtotal = Σ(price × qty) − скидка промокода` (скидка — только в заказе продавца кода, см. ниже), `delivery_cost` серверная, `fee_amount = Order::calculatePlatformFeeFor(subtotal, pricing_model)` (в `bpa_v2` — по карточной ставке как максимальной, уточняется при инициации платежа), `total_amount`.
    - `customer_name/phone/email`, `delivery_service`, `payment_batch_id`, `pickup_point_id` (снимок пункта отправки), `source='platform'`, статусы `PENDING`.
-   - `OrderItem` с `product_snapshot`, атомарный резерв склада (`decreaseStockAtomically`).
+   - `OrderItem` с `product_snapshot` (`createOrderItems()`; позиция со скидкой делится на 1 шт. со скидкой + остаток), атомарный резерв склада (`decreaseStockAtomically`) один раз на позицию; при промокоде — резерв применения (`PromoRedemptionService::reserve`).
    - `OrderAddress` (ПВЗ: `pickup_point_id/name/data`, извлечение `postal_code`; или курьер: `city`, `address_line1`).
    - `OrderShipment` (`carrier`, `delivery_method`, `cost`, `weight` по весу позиций).
    - запись `OrderStatusHistory` (создан).
@@ -96,6 +98,14 @@ flowchart TD
 
 Защита с 19.09.2026 трёхслойная: замок на покупателя (гонка) → проверка дубля по составу (повтор) → `throttle:12,1` (предохранитель, если кеш недоступен). Фронт дополнительно переиспользует уже созданный батч, если состав корзины не изменился (`lastSubmittedFingerprint` в `useCheckout`), и показывает выбор «оплатить существующий / оформить ещё один» вместо молчаливого создания второго заказа.
 :::
+
+## Промокод в предрасчёте и оформлении
+
+Подробно — [Промокоды и отмена позиции](/processes/promo-codes). Кратко:
+
+- **Поля запроса.** `promo_code` (nullable, ≤ 64) и `promo_expected_discount` (скидка, которую покупатель видел на экране) в `CreateOrdersRequest`; `PreviewOrdersRequest` наследует их. Товар в оформлении — один раз (`orders.*.items.*.product_id` — `distinct`).
+- **Предрасчёт** (`previewOrders(..., ?promoCode)`). Код проверяется `PromoCodeEvaluator` по валидным позициям всех продавцов. Отказ → issue `promo_code_rejected` (`can_checkout = false`), блок `promo {code, applied, reason, message, discount, seller_id, product_id, unit_price, price_after_discount}`. У заказа — `subtotal` после скидки, `subtotal_before_discount`, `promo_discount`; у позиций — `promo_discount` и `total_price` после скидки. Промахи «не найден» считаются в лимит перебора.
+- **Создание** (`createOrdersUnderLock`). Отказ кода — в общий список `issues` вместе с остальными проблемами. Затем антидубль, затем в транзакции **первой операцией** повторная проверка с `PromoCode::lockForUpdate()` и сверка с `promo_expected_discount`: скидка уменьшилась — `422` issue `promo_discount_changed`. Скидка ложится только в заказ продавца кода: `subtotal` хранится **после** скидки (от него комиссия, `total_amount`, чек, выплата), выбранная позиция 2+ шт. делится на две строки (1 шт. со скидкой первой + остаток), применение резервируется. Нарушение частичного уникального индекса применений → `promo_code_rejected` вместо `400` с текстом SQL.
 
 ## Пункт отправки заказа
 
@@ -140,6 +150,7 @@ flowchart TD
 | Покупатель повторно проходит экран оплаты | `409` + `existing`, модалка «Такой заказ уже есть»; в логе `Checkout: повторное оформление того же заказа отклонено` | покупатель (оплатить существующий или подтвердить повтор) |
 | Два оформления одновременно | второе ждёт замок до 8 с, затем `409` `checkout_in_progress`; в логе `Checkout: параллельное оформление отклонено замком` | покупатель (проверяет «Мои покупки») |
 | Товары продавца в разных пунктах отправки | `422` + issue `mixed_pickup_points` | покупатель (оформляет раздельно) |
+| Промокод не прошёл / скидка уменьшилась | `422` + issue `promo_code_rejected` / `promo_discount_changed`, текст у поля промокода | покупатель (убирает или меняет код, подтверждает новую сумму) |
 
 ## Как тестировать
 
@@ -152,6 +163,7 @@ flowchart TD
 5. Курьер: обязателен адрес (`courier_address`), иначе валидация.
 6. Гость: инлайн-регистрация в checkout + merge гостевой корзины.
 7. Расчёт `platform_fee` и `total_amount` совпадает между `/calculate` и `/checkout`.
+8. Промокод: скидка в предрасчёте = скидка в заказе, позиция 2+ шт. делится на две строки, повтор оформления с разделённой позицией ловится антидублем. Автотесты — `tests/Feature/Promo/PromoCheckoutTest.php`, `CartPromoEvaluateTest.php`.
 
 **Покрытие:** нет (см. [матрицу покрытия](/testing/coverage-matrix)) — приоритетная цель этапа автотестов: `CartController`, `CheckoutController`.
 
@@ -165,3 +177,4 @@ flowchart TD
 | DaData | `app/Http/Controllers/Api/DaDataController.php`, `app/Services/DaDataService.php` |
 | Frontend | `nuxt/stores/cart.ts`, `nuxt/pages/{cart,checkout}.vue`, `nuxt/components/checkout/*` |
 | Модели | `app/Models/Order/{Order,OrderItem,OrderAddress,OrderShipment}.php` |
+| Промокод | `app/Services/Promo/PromoCodeEvaluator.php`, `app/Services/Promo/PromoRedemptionService.php`, `app/Http/Controllers/Api/CartPromoCodeController.php`, `nuxt/components/cart/PromoCodeField.vue` — см. [Промокоды и отмена позиции](/processes/promo-codes) |

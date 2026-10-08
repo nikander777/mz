@@ -51,6 +51,7 @@ export default withMermaid(
             { text: 'Обзор', link: '/processes/' },
             { text: 'Жизненный цикл заказа', link: '/processes/order-lifecycle' },
             { text: 'Оформление (checkout)', link: '/processes/checkout' },
+            { text: 'Промокоды и отмена позиции', link: '/processes/promo-codes' },
             { text: 'Платежи (Moneta)', link: '/processes/payments-moneta' },
             { text: 'Выплаты продавцам', link: '/business/seller-payouts-flow' },
             { text: 'Каталог и поиск', link: '/processes/catalog-search' },
