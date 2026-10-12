@@ -110,6 +110,14 @@ services:
       # и раздел лежал два месяца. Снапшот перезаписывается на месте.
       MEILI_SCHEDULE_SNAPSHOT: "86400"
       MEILI_SNAPSHOT_DIR: /meili_data/snapshots
+      # Те же ограничения, что у meilisearch-main: батч по умолчанию до 10 ГиБ
+      # оставляет индекс в состоянии, когда новые документы больше не
+      # принимаются («size is greater than supported», 01.10.2026), — похоже,
+      # так в 2026 году и ломался releases при массовой заливке. Память
+      # индексации по умолчанию — 2/3 машины, рядом с Postgres.
+      MEILI_EXPERIMENTAL_MAX_NUMBER_OF_BATCHED_TASKS: "10"
+      MEILI_EXPERIMENTAL_LIMIT_BATCHED_TASKS_TOTAL_SIZE: "1073741824"
+      MEILI_MAX_INDEXING_MEMORY: "16GiB"
     # Дефолтный soft-лимит docker = 1024 fd: settingsUpdate на индексе releases
     # (19M документов) падает с too_many_open_files (os error 24).
     ulimits:
