@@ -42,7 +42,7 @@
 | `users` | ФИО, `username`, `city`, `email`, `phone`, `is_seller`, `registration_type`, аватар + **витрина**: `description`, `contacts`, `delivery_payment`, `standard_description`, `auto_message` |
 | `seller_profiles` | **Идентификация:** `legal_form`, `inn`, `company_name`, `company_legal_form`, `kpp`, `ogrn`, `ogrnip`, `legal_address`, `jurisdiction`, `date_of_birth` · **НКО:** `moneta_unit_id`, `moneta_account_id`, `moneta_contract_status`, `agreement_signed_at`, `agreement_doc_path`, `moneta_synced_at` · **ФЛ-выплаты:** `payout_method`, `payout_card_token` (🔒hidden), `payout_card_mask`, `payout_sbp_phone`, `payout_sbp_bank_id`, `self_employed_confirmed_at` · **Анкета:** `payout_setup_data` (🔒AES-encrypted: паспорт, банк, согласия) |
 | `orders` | `moneta_operation_id`, `payout_eligible_at` (конец окна удержания), `seller_payout_status` (`settled_on_account` = окно закрыто), `seller_payout_amount`, `seller_payout_at` |
-| `seller_profiles` (счёт) | `reserve_balance` (остаток счёта в НКО, кэш), `reserve_required` (неснижаемый остаток, NULL = дефолт 2000 ₽), `debt_balance`, `balance_synced_at`, `statement_synced_at`, `statement_sync_error`, `balance_mismatch`/`_since` |
+| `seller_profiles` (счёт) | `reserve_balance` (остаток счёта в НКО, кэш), `reserve_required` (неснижаемый остаток, NULL = дефолт 500 ₽, у М9 = 0), `debt_balance`, `balance_synced_at`, `statement_synced_at`, `statement_sync_error`, `balance_mismatch`/`_since` |
 | `seller_ledger_entries` | История счёта: `source=statement` — операции выписки НКО (зачисление товара/доставки, комиссия, возврат, вывод, прочее), `source=platform` — учёт площадки (долг, корректировки). Уникальность `(moneta_operation_id, type)` |
 | `seller_withdrawals` | Заявки на вывод: `pending → processing → succeeded / failed`, `source` (seller/probe), `client_transaction`, `moneta_template_id` + `scheduled_at` (шаблон НКО), прогноз НКО `payee_amount`/`fee_amount`/`destination`, номер операции НКО |
 
@@ -435,7 +435,7 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
 **Доступно к выводу:**
 
 ```
-доступно = остаток − неснижаемый остаток (2000 ₽) − долг − ожидает срока − вывод в обработке
+доступно = остаток − неснижаемый остаток (500 ₽) − долг − ожидает срока − вывод в обработке
 ```
 
 - **Ожидает срока** — сумма проводок выписки по заказам, окно которых не закрыто
@@ -525,6 +525,10 @@ ReleaseDeliveredOrders (ежечасно): окно истекло, спора �
 > ≤ `probe_max_amount`, мимо проверки доступного). Назначение платежа
 > (`PAYMENTS_WITHDRAWAL_PAYMENT_PURPOSE`) согласовать с бухгалтерией. Открыт вопрос, может ли
 > продавец вывести деньги сам из кабинета МОНЕТЫ: если да, удержание площадки не работает.
+>
+> **На проде с 15.10.2026** список постепенного включения пуст — вывод открыт всем продавцам
+> с действующим договором с НКО. Неснижаемый остаток — 500 ₽ (`PAYMENTS_RESERVE_MINIMUM_BALANCE`,
+> до 15.10 был 2000 ₽); у М9 (профиль 2, счёт площадки) индивидуально 0.
 
 **Почему вывод закрыт — продавец видит причину** (с 06.10.2026). Раньше одна плашка «вывод
 пока недоступен» выглядела одинаково до и после активации договора, и продавец не понимал, ждать

@@ -196,6 +196,8 @@ x-laravel-env: &laravel-env
   PAYMENTS_REFUND_LOGIN: ${PAYMENTS_REFUND_LOGIN:-}
   PAYMENTS_REFUND_PASSWORD: ${PAYMENTS_REFUND_PASSWORD:-}
   PAYMENTS_REFUND_PAYMENT_PASSWORD: ${PAYMENTS_REFUND_PAYMENT_PASSWORD:-}
+  # Неснижаемый остаток на счёте продавца, ₽ (индивидуальный — seller_profiles.reserve_required).
+  PAYMENTS_RESERVE_MINIMUM_BALANCE: ${PAYMENTS_RESERVE_MINIMUM_BALANCE:-500}
   # Вывод продавцов на расчётный счёт — разовым шаблоном НКО (MerchantAPI
   # CreateOperationTemplate). Кнопка продавца закрыта, пока ENABLED не true;
   # TRANSPORT=moneta_template нужен и проверочному выводу (sellers:withdrawal-probe).

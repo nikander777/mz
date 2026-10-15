@@ -131,6 +131,8 @@ x-laravel-env: &laravel-env
   PAYMENTS_PLATFORM_INN: ${PAYMENTS_PLATFORM_INN}
   PAYMENTS_PLATFORM_NAME: ${PAYMENTS_PLATFORM_NAME:-OOO M9}
   PAYMENTS_PLATFORM_PHONE: ${PAYMENTS_PLATFORM_PHONE}
+  # Неснижаемый остаток на счёте продавца, ₽ (индивидуальный — seller_profiles.reserve_required).
+  PAYMENTS_RESERVE_MINIMUM_BALANCE: ${PAYMENTS_RESERVE_MINIMUM_BALANCE:-500}
   # Вывод продавцов на расчётный счёт — разовым шаблоном НКО (MerchantAPI
   # CreateOperationTemplate). Кнопка продавца закрыта, пока ENABLED не true;
   # TRANSPORT=moneta_template нужен и проверочному выводу (sellers:withdrawal-probe).
