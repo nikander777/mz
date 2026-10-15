@@ -7,6 +7,70 @@
 
 ---
 
+## 15.10.2026: пересборка с нуля и постоянная синхронизация
+
+Первопричина порчи индексов (и `decoding failed`, и segfault индексатора) —
+неисправная память VM-3, заменена 14.10.2026. После замены все четыре индекса
+дискографии собраны заново в чистом томе `meili_disco_v3`, а изменения с тех пор
+доезжают в Meili сами.
+
+### Как устроено
+
+- **Полная заливка** — `disco:meili-index`. Документы собирает трейт
+  `WritesCatalogToMeili` (mz.discogs). Без `--wait` задачи Meili
+  отслеживаются: упавшая разбирается делением пополам, «ядовитый» документ
+  пропускается с записью `ПРОПУСК id=…` в лог. Раньше упавший батч терялся молча.
+- **Синхронизация** — `disco:meili-sync`, в расписании discogs-scheduler раз в
+  5 минут. Досылает всё, у чего сдвинулся `updated_at`: обложки
+  (`LoadEntityImages`), просмотры, импорт. Мастер обновляется вместе со своим
+  основным релизом. Курсор `(updated_at, id)` — в таблице `meili_sync_cursors`;
+  пока он не задан, команда ничего не делает.
+- Индексы `idx_{releases,artists,labels,masters}_updated_at_id` обслуживают
+  выборку по курсору.
+
+```bash
+# состояние курсоров
+docker exec muzilla-discogs-scheduler-1 php artisan disco:meili-sync --status
+```
+
+### Пересборка с нуля (повторить при порче)
+
+Всё на VM-3, рядом с Postgres. Боевой Meili (:7700) не трогается до переключения.
+
+1. Чистый экземпляр на localhost:7702 с томом `muzilla_meili_disco_vN`
+   (`docker volume create` с метками compose-проекта `muzilla`, `docker run`
+   с теми же `MEILI_*`, что у сервиса `meilisearch` в `compose.vm3-data.yml`).
+2. `/opt/muzilla/.env.disco-build` (600) — переменные воркера discogs (APP_KEY,
+   DB_*, S3_MEDIA_*, MEILISEARCH_KEY), но `DB_HOST=127.0.0.1`,
+   `MEILISEARCH_HOST=http://127.0.0.1:7702`, `CACHE_STORE=array`,
+   `QUEUE_CONNECTION=sync`.
+3. `/root/meili-build.sh` — `search:configure`, затем `disco:meili-index`
+   в два потока: releases и artists → masters → labels (`--max-queue=4`).
+   Момент старта пишется в `/root/meili-build/started_at`, логи — рядом.
+   15.10.2026: releases ~2700 док/с, artists ~430 док/с.
+4. Сверить число документов с Postgres, отсутствие `ПРОПУСК`/`exit=1` в логах.
+5. Переключение: остановить сборочный контейнер, в `compose.vm3-data.yml`
+   сменить том сервиса `meilisearch`, затем
+   `docker compose -f compose.vm3-data.yml up -d --no-deps --pull never meilisearch`.
+   На время рестарта каталог уходит на запасной поиск по Postgres.
+6. `disco:meili-sync --init="<started_at>"` — всё, что изменилось за время
+   заливки, догоняется первыми запусками.
+
+### Порча базы, найденная 15.10.2026
+
+amcheck после замены памяти: 5 битых индексов (`releases_pkey`,
+`idx_releases_master_id`, `releases_has_thumb_title_idx`,
+`artists_has_thumb_name_idx`, `release_images_release_id_type_index`) —
+`REINDEX CONCURRENTLY`; 9 испорченных строк — `pg_surgery`
+(`heap_force_freeze` для релиза 16348272 с битым заголовком,
+`heap_force_kill` для мусорных копий трек-листов). Сырые страницы до правки —
+`/root/pg-surgery-20261015/` на VM-3. С битым `releases_pkey` постраничная
+заливка по id теряла бы строки — amcheck перед пересборкой обязателен.
+
+---
+
+> Ниже — история до замены памяти (сентябрь 2026).
+
 ## Что известно
 
 `releases` на проде повреждён на уровне LMDB. Симптомы двойные: часть задач
