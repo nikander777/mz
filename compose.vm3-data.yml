@@ -125,9 +125,11 @@ services:
         soft: 524288
         hard: 524288
     volumes:
-      # v2 — том, пересозданный 24.08.2026 при переезде 1.6.2 → 1.53.1.
-      # Старый meili_data остался с битым индексом releases.
-      - meili_data_v2:/meili_data
+      # v3 — чистый том от 15.10.2026: все четыре индекса собраны заново после
+      # замены неисправной памяти VM-3 (из-за неё портились и v1, и v2).
+      # Дальше изменения досылает disco:meili-sync, полная заливка не нужна.
+      # Ранбук: docs/deployment/meili-releases-rebuild.md.
+      - meili_disco_v3:/meili_data
     ports:
       - "${VM3_BIND:-0.0.0.0}:7700:7700"
     # Без healthcheck крэш-петля (restart: unless-stopped + SIGABRT раз в минуту)
@@ -239,6 +241,8 @@ volumes:
   # (повреждённая LMDB индекса releases). Объявлен, чтобы compose не терял
   # его из виду до удаления вручную.
   meili_data:
+  # meili_data_v2 — том 24.08–15.10.2026, artists в нём битый (MDB_PAGE_NOTFOUND).
   meili_data_v2:
+  meili_disco_v3:
   meili_main_data:
   minio_data:
