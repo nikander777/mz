@@ -116,6 +116,31 @@ stateDiagram-v2
 
 Покупатель, продавец (`POST /api/orders/{order}/items/{orderItem}/cancel`) или админ с `orders.cancel` (`POST /api/admin/orders/{id}/items/{itemId}/cancel`) отменяют одну строку заказа, обязательна причина. Условия: `pricing_model = bpa_v2`, статус `PAID`/`PROCESSING`, `shipped_at` пуст, `payment_status = completed`, холд не в `settling` (`409`), активных строк ≥ 2 — последнюю отменяют отменой заказа. Выполняется `OrderItemCancellationService` **под замком решений** `withDecisionLock`. Статус заказа не меняется: в `order_status_history` пишется запись с тем же статусом и комментарием «Отменена позиция …». Начисленные `subtotal`/`total_amount` не трогаются — растёт `orders.cancelled_items_amount`, `fee_amount` пересчитывается от `netSubtotal()`, товар возвращается на склад. Деньги: холд — строка не войдёт в подтверждение (`PaymentHoldService` списывает `netTotal()`), СБП — `IssueOrderItemRefund` возвращает строку счёта. Доставка не возвращается, заявка СДЭК не меняется; продавцу письмо «не кладите в посылку» (`OrderItemCancelled` → `OrderItemCancelledNotification`). Полная отмена после этого возвращает только остаток. Подробно — [Промокоды и отмена позиции](/processes/promo-codes#отмена-позиции).
 
+### Кто отменил заказ
+
+С 16.10.2026 каждая отмена заказа целиком пишет в `orders` инициатора отмены (`cancel_initiator`: `buyer` / `seller` / `admin` / `system` / `provider`), повод и этап (`cancel_reason_code`, это `App\Enums\OrderCancelReason`), автора (`cancelled_by`) и текст причины (`cancel_reason`). Покупатель и продавец отменяют через общий `/cancel`, поэтому `OrderService::cancelOrder` определяет инициатора по тому, кем пользователь приходится заказу.
+
+| Код | Инициатор | Путь |
+|---|---|---|
+| `buyer_request` / `buyer_refused_wait` | покупатель | `/cancel` из ЛК / отказ ждать (письмо, ЛК) |
+| `seller_request` | продавец | `/cancel`, `/seller-cancel`, ссылка из письма |
+| `admin` / `admin_status` | администратор | кнопка отмены / ручная смена статуса |
+| `unpaid_timeout` | система | `CancelUnpaidOrders` |
+| `hold_expiring` / `wait_no_answer` / `extension_missed` / `not_shipped` | система | `ProcessUnshippedOrderDeadlines` |
+| `payment_cancelled` | платёжная система | колбэк Moneta «платёж отменён» |
+
+У отмен до 16.10.2026 поля пустые. Разбор денег заказа в админке выводит для них инициатора из истории статусов: по автору записи и узнаваемому тексту комментария. Такой инициатор помечается как определённый по истории.
+
+**Разбор денег заказа** — `GET /api/admin/orders/{id}/money-trace` (права `orders.view` + `finance.view`, `OrderMoneyTraceService`). Ручка ничего не пишет, только сводит уже сохранённое:
+- попытки оплаты и строки чека (`payment_invoices`), холд (`order_payments`);
+- комиссию: расчёт по ставкам заказа (эквайринг и фискализация НКО, маржа площадки) рядом с фактом выписки НКО;
+- распределение по счетам (`payment_settlements`), возвраты с инициатором, чеки;
+- кто отменил, отменённые позиции, возвраты товара;
+- сырые уведомления агрегатора (`bpa_webhook_log`);
+- общую хронологию, где у каждого события указаны автор и его роль в заказе.
+
+В UI это блок «Деньги и события» в карточке заказа и «Разбор денег» в истории счёта продавца.
+
 ### Промокод следует за статусом заказа
 
 Хук `Order::updated` при смене `status` или `payment_status` вызывает `PromoRedemptionService::syncWithOrder()`: оплата (в том числе холд) → применение `used`, отмена любым путём (`cancelOrder`, `sellerCancelOrder`, автоотмена по срокам, `CancelUnpaidOrders`, отказ провайдера) → `released`. Возврат, спор и завершение применение не трогают. Хук выбран вместо слушателей, потому что часть отмен событий не бросает. Подробно — [Промокоды и отмена позиции](/processes/promo-codes#промокод-жизненныи-цикл-применения).
