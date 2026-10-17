@@ -38,6 +38,7 @@ export const processPages: ProcessPage[] = [
   { text: 'Кабинет продавца', link: '/overview/seller-account', path: 'overview/seller-account.md', status: '🔴' },
   // В конце списка, чтобы не сдвигать номера (и нумерацию разделов) страниц на согласовании.
   { text: 'Промокоды продавцов', link: '/overview/promo-codes', path: 'overview/promo-codes.md', status: '⚪' },
+  { text: 'Заполнение дискографии лотов', link: '/overview/release-link', path: 'overview/release-link.md', status: '⚪' },
 ]
 
 /** Сопоставление relativePath → номер страницы (1-based) для темы. */
