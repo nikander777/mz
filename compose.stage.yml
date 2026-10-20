@@ -424,7 +424,6 @@ services:
         LARAVEL_URL: ${NUXT_LARAVEL_URL:-http://main-web}
         BACKEND_BASE_URL: ${NUXT_BACKEND_BASE_URL:-http://main-web}
         DISCOGS_BASE_URL: ${NUXT_DISCOGS_BASE_URL:-http://discogs-web}
-        DISCOGS_API_TOKEN: ${DISCOGS_API_TOKEN:-placeholder}
         REVERB_APP_KEY: ${REVERB_APP_KEY:-placeholder}
         REVERB_HOST: ${REVERB_HOST:-localhost}
         REVERB_PORT: ${REVERB_PORT:-8080}
@@ -436,6 +435,9 @@ services:
       BACKEND_BASE_URL: ${NUXT_BACKEND_BASE_URL}
       DISCOGS_BASE_URL: ${NUXT_DISCOGS_BASE_URL}
       DISCOGS_API_TOKEN: ${DISCOGS_API_TOKEN}
+      # Токен внутреннего API discogs (bearer и подпись X-Visitor-Id) — только
+      # на рантайме: в образ при сборке он больше не попадает.
+      NUXT_API_TOKEN: ${DISCOGS_API_TOKEN}
       REVERB_APP_KEY: ${REVERB_APP_KEY}
       REVERB_HOST: ${REVERB_HOST}
       REVERB_PORT: ${REVERB_PORT}
