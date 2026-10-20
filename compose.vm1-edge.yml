@@ -411,6 +411,11 @@ services:
       # дефолт apiToken=mbrainz-FSzz-3333 (несовпадает с INTERNAL_API_TOKEN),
       # поэтому Nitro шлёт неверный Bearer → 401. Override через NUXT_*.
       NUXT_API_TOKEN: ${DISCOGS_API_TOKEN}
+      # Секрет подписи X-Visitor-Id (учёт просмотров карточек дискографии).
+      # Обязан совпадать с INTERNAL_API_TOKEN discogs: с неверной подписью
+      # discogs просмотр молча не засчитывает (так было 08–20.10.2026 —
+      # в образ при сборке попадал токен стейджа).
+      NUXT_VISITOR_SECRET: ${DISCOGS_API_TOKEN}
       NUXT_API_BASE_URL: http://discogs-web
       # Node — один поток на процесс: SSR каталога и дискографии упирается в
       # ядро задолго до памяти. Держим несколько реплик (edge балансирует их
