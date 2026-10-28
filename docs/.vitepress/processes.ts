@@ -40,6 +40,7 @@ export const processPages: ProcessPage[] = [
   { text: 'Промокоды продавцов', link: '/overview/promo-codes', path: 'overview/promo-codes.md', status: '⚪' },
   { text: 'Заполнение дискографии лотов', link: '/overview/release-link', path: 'overview/release-link.md', status: '⚪' },
   { text: 'Блокировка дискографии', link: '/overview/disco-blocks', path: 'overview/disco-blocks.md', status: '⚪' },
+  { text: 'Перенос товаров с Ozon', link: '/overview/ozon-import', path: 'overview/ozon-import.md', status: '⚪' },
 ]
 
 /** Сопоставление relativePath → номер страницы (1-based) для темы. */

@@ -29,6 +29,8 @@
 | `GET` | `/api/profile/products-io/imports/{import}` | Состояние загрузки (поллинг прогресса) |
 | `GET` | `/api/profile/products-io/imports/{import}/errors` | Отчёт об ошибках построчно |
 | `DELETE` | `/api/profile/products-io/imports/{import}` | Удалить запись истории |
+| `POST` | `/api/profile/products-io/ozon/check` | Перенос с Ozon: проверка ключа Seller API |
+| `POST` | `/api/profile/products-io/ozon/imports` | Перенос с Ozon: запуск (ход — те же `imports/{import}`), см. [Перенос товаров с Ozon](../overview/ozon-import) |
 
 **Подводные камни импорта.** `ProductObserver::saving()` при заданном `release_id` синхронно ходит в Discogs API — на массовой загрузке это тысячи внешних запросов, поэтому сохранение идёт внутри `ProductObserver::withoutDiscogsSync()`, а `release_id` не трогается, если не изменился. По той же причине Scout отключён на время записи: индекс обновляется разом по всем затронутым лотам в конце (`Product::whereIn(...)->searchable()`). Транзакция — на порцию строк, а не на весь файл. Статусы `sold`/`deleted` из выгрузки не считаются ошибкой, если совпадают с текущим, иначе выгруженный файл не загрузился бы обратно.
 
