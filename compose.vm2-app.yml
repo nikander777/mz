@@ -79,6 +79,9 @@ x-laravel-env: &laravel-env
   PROXY_ALERT_EMAIL: ${PROXY_ALERT_EMAIL:-}
   PROXY_ALERT_MAX_USER_ID: ${PROXY_ALERT_MAX_USER_ID:-}
   PROXY_ALERT_MIN_WORKING: ${PROXY_ALERT_MIN_WORKING:-5}
+  # Минутный бюджет прямых запросов к discogs по токену. На бюджете 50 половина
+  # запросов получала 429: реально токену доступно ~27 в минуту (04.11.2026).
+  DISCOGS_TOKEN_REQUESTS_PER_MINUTE: ${DISCOGS_TOKEN_REQUESTS_PER_MINUTE:-25}
   MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
   # Бакет внешних бэкапов mz-backup: main-scheduler раз в час читает оттуда
   # статусы прогонов (backups:check) и шлёт письмо, если копия провалилась
