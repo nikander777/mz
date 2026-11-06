@@ -42,9 +42,26 @@
 
 Формат `Box Set`, выбранный руками, подраздела не даёт — по одной этой строке неизвестно, винил это или CD; такой лот остаётся без подраздела, но в фильтре «Формат» виден в бакете «Бокс-сет». Товарам, созданным до появления этой логики, подраздел доливает `php artisan products:backfill-subcategory` (см. [Операции](/processes/operations#миграция-с-legacy-портала)).
 
+## Форма лота: фото и количество
+
+**Порядок фото.** Продавец перетаскивает миниатюры в `ProductPhotoUpload` (`sortablejs`, на телефоне после короткого удержания). Первое фото главное, и оно же обложка лота в каталоге и ЛК: всё читается из `photo_0…photo_9`, отдельного признака обложки нет.
+
+Форма шлёт `photo_order` — JSON-список, где уже загруженное фото записано путём, а новое файлом `new:N` (N — индекс в `photos[]`). Без общего списка нельзя понять, где среди старых стоит новое, и оно всегда оказывалось бы в конце. `existing_photos` оставлен для старых клиентов: файлы, которых нет в списке, дописываются в конец. Смена порядка переставляет только пути, файлы не пересобираются.
+
+**Количество.** `stock_quantity` — целое от 1 до `Product::MAX_STOCK_QUANTITY`. Распроданный лот можно сохранить с нулём, иначе правка описания вынуждала бы вернуть его в продажу.
+
+При редактировании форма шлёт ещё `stock_quantity_original` — остаток на момент открытия. Пока форма открыта, лот могут купить, и прямая запись вернула бы проданные единицы:
+
+- число не меняли → остаток не пишется вовсе;
+- поменяли → условный `UPDATE ... WHERE stock_quantity = original`; если остаток успел измениться, ответ `422` с `current_stock`, и форма подставляет актуальное значение.
+
+**Списание.** Остаток резервируется при оформлении заказа (`decreaseStockAtomically`), а не после оплаты, и возвращается при любой отмене. См. [Оформление заказа](/processes/checkout).
+
+**Статус при нуле.** Распроданный лот остаётся `active`: из каталога он пропадает по условию `stock_quantity > 0`, страница товара открывается и показывает «Нет в наличии», а при отмене заказа или пополнении лот сам возвращается в продажу. Статус `sold` дал бы 404 на странице товара. Отметку «Продан» показывает только `SellerProductCard` в «Мои лоты» — по остатку, статус для неё не меняется.
+
 ## Как тестировать
 
-**Покрытие:** 🟡 частично (в составе Profile ~40). Пробел: форма (ПВЗ/цвет/грейды/фото), привязка Discogs, продажа из коллекции, синхронизация остатка с Meili. Важно: остаток менять только через `Product::decreaseStock/increaseStock` (иначе Scout не триггерится). См. [матрицу](/testing/coverage-matrix).
+**Покрытие:** 🟡 частично (в составе Profile ~40). Пробел: форма (ПВЗ/цвет/грейды), привязка Discogs, продажа из коллекции, синхронизация остатка с Meili. Важно: остаток менять только через `Product::decreaseStock/increaseStock` (иначе Scout не триггерится). См. [матрицу](/testing/coverage-matrix).
 
 ## Ключевые файлы
 
@@ -54,7 +71,7 @@
 | Сервисы | `app/Services/{DiscogsReleaseService,ProductSlugger}.php` |
 | Модели | `app/Models/{Product,Collection}.php` |
 | Джоба | `app/Jobs/ProcessImageThumbnails.php` |
-| Frontend | `nuxt/pages/seller/index.vue`, `nuxt/components/seller/{MusicProductForm,HifiProductForm,ProductPhotoUpload,AddProductModal}.vue` |
+| Frontend | `nuxt/pages/seller/index.vue`, `nuxt/components/seller/{MusicProductForm,HifiProductForm,ProductPhotoUpload,ProductQuantityCounter,AddProductModal}.vue`, `nuxt/composables/useProductStockField.ts`, `nuxt/utils/productPhotoForm.ts` |
 | Экспорт/импорт: формат | `app/Support/ProductSheetSchema.php` — единый источник колонок, справочников и алиасов |
 | Экспорт/импорт: бэкенд | `app/Exports/SellerProducts*.php`, `app/Services/ProductIo/*`, `app/Jobs/ProcessProductImport.php`, `app/Models/ProductImport.php` |
 | Экспорт/импорт: фронт | `nuxt/components/seller/ProductImportModal.vue`, `nuxt/composables/useProductImportExport.ts` |
