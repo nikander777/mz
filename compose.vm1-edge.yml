@@ -214,6 +214,11 @@ x-laravel-env: &laravel-env
 
   # === Каталог товаров: meili|database (откат — database) ===
   MZ_CATALOG_DRIVER_PRODUCTS: ${MZ_CATALOG_DRIVER_PRODUCTS:-database}
+  # Сверка индекса products с базой (config/catalog.php → meili.reconcile):
+  # листинг отдаёт на починку документы, которых нет в базе. Пусто — включена
+  # (там, где Scout пишет в Meili); false — аварийный рубильник. Значение должно
+  # совпадать на VM-1 и VM-2: ставит задачу веб, выполняет воркер.
+  MZ_CATALOG_INDEX_RECONCILE: ${MZ_CATALOG_INDEX_RECONCILE:-}
   # Раздел Hi-Fi (config/features.php). Выключен на старте: логистика под
   # крупногабаритные товары не готова. Парный флаг фронта — у сервиса nuxt.
   MZ_FEATURE_HIFI: ${MZ_FEATURE_HIFI:-false}

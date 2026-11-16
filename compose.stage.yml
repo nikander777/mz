@@ -43,6 +43,9 @@ x-laravel-env: &laravel-env
   MEILISEARCH_KEY: ${MEILI_MASTER_KEY}
   # Драйвер каталога: meili|database (откат — database). Управляется из .env.
   MZ_CATALOG_DRIVER_PRODUCTS: ${MZ_CATALOG_DRIVER_PRODUCTS:-database}
+  # Сверка индекса products с базой (config/catalog.php → meili.reconcile).
+  # Пусто — включена (там, где Scout пишет в Meili); false — рубильник.
+  MZ_CATALOG_INDEX_RECONCILE: ${MZ_CATALOG_INDEX_RECONCILE:-}
   DISCO_CATALOG_DRIVER: ${DISCO_CATALOG_DRIVER:-database}
   # Раздел Hi-Fi (config/features.php). Выключен на старте: логистика под
   # крупногабаритные товары не готова. Парный флаг фронта — ниже, у nuxt.
