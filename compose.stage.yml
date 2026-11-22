@@ -123,6 +123,8 @@ x-laravel-env: &laravel-env
   # /api/webhook/bpa/{secret}; пусто = эндпоинт отвечает 503.
   BPA_WEBHOOK_SECRET: ${BPA_WEBHOOK_SECRET}
   BPA_WEBHOOK_ALLOWED_IPS: ${BPA_WEBHOOK_ALLOWED_IPS}
+  # Яндекс.Метрика: токен Measurement Protocol — цели «Регистрация»/«Вход» с сервера.
+  METRIKA_MP_TOKEN: ${METRIKA_MP_TOKEN:-}
   # Главный эшелон защиты: состояние денег берём из /api/getoperation, а не из
   # тела уведомления. Выключается только на время работы с эмулятором.
   BPA_WEBHOOK_VERIFY_VIA_API: ${BPA_WEBHOOK_VERIFY_VIA_API:-true}
